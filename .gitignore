@@ -1,5 +1,10 @@
 # dependencies
 /node_modules
+/.venv/
+/runtime-cache/
+/runtime-jobs/
+/runtime-logs/
+/projects/
 /.pnp
 .pnp.*
 .yarn/*
@@ -36,3 +41,17 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+# desktop builds and installers
+/desktop-dist/
+/desktop-release/
+/installer-output/
+/build/
+/PaperDockData/
+/.cache/
+/tmp/
+
+# caches and logs
+__pycache__/
+*.pyc
+*.log
+tsconfig.tsbuildinfo

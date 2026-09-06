@@ -6,8 +6,10 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "test:ocr-render": "node scripts/test-ocr-render.cjs",
     "dev": "vinext dev",
     "build": "vinext build",
+    "build:desktop": "vite build --config vite.desktop.config.ts",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
     "format": "oxfmt"

@@ -50,6 +50,23 @@
 
 body { font-family: Arial, "Microsoft YaHei", sans-serif; }
 
+.pd-app { isolation: isolate; position: relative; }
+.pd-wallpaper { position: fixed; inset: -20px; z-index: -1; pointer-events: none; overflow: hidden; }
+.pd-wallpaper img, .pd-wallpaper video, .pd-wallpaper > div { position: absolute; width: 100%; height: 100%; inset: 0; object-fit: cover; }
+[data-paper-theme] .pd-app button { border-radius: var(--pd-radius); transition: box-shadow .15s, filter .15s; }
+[data-paper-theme] .pd-app button:not(:disabled):hover { box-shadow: 0 2px 12px #0002; }
+[data-paper-theme] .pd-app button:focus-visible { outline: 3px solid var(--pd-accent); outline-offset: 3px; }
+[data-paper-theme] .pd-app button:disabled { opacity: .5; cursor: not-allowed; }
+[data-paper-theme] .pd-app button[class*="bg-[#167c69]"] { background: var(--pd-accent); color: var(--pd-on-accent); }
+[data-paper-theme="outline"] .pd-app button[class*="bg-[#167c69]"] { background: white; color: #1d2a29; border: 2px solid var(--pd-accent); }
+[data-paper-theme="glass"] .pd-app button[class*="bg-[#167c69]"] { background: var(--pd-accent); color: var(--pd-on-accent); border: 1px solid #ffffff80; box-shadow: inset 0 2px 0 #ffffff45, 0 4px 12px #0002; }
+[data-paper-theme] .pd-app .bg-white, [data-paper-theme] .pd-app header, [data-paper-theme] .pd-app aside { background-color: var(--pd-surface); }
+.pd-settings button { padding: .65rem 1rem; border: 1px solid #aab8b3; }
+.pd-settings label { font-size: 16px; }
+.pd-settings select { padding: .5rem; background: white; color: #1d2a29; }
+.pd-settings input[type="color"] { vertical-align: middle; width: 64px; height: 36px; }
+.pd-settings input { accent-color: var(--pd-accent); }
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

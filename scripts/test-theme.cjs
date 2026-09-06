@@ -1,0 +1,12 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const ts = require('typescript');
+const output = ts.transpileModule(fs.readFileSync(require('node:path').join(__dirname, '../app/appearance.tsx'), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+const moduleExports = {};
+vm.runInNewContext(output, { exports: moduleExports, require });
+const theme = { accent: '#437f70', radius: 12, opacity: 92, dim: 18, blur: 0, style: 'solid', motion: true };
+assert.equal(moduleExports.validate(theme).accent, theme.accent);
+for (const invalid of [null, {}, { ...theme, accent: 'url(https://example.com)' }, { ...theme, opacity: 0 }, { ...theme, radius: Infinity }, { ...theme, style: 'script' }, { ...theme, motion: 'true' }]) assert.throws(() => moduleExports.validate(invalid));
+assert.equal(moduleExports.validate({ ...theme, script: 'ignored' }).script, undefined);
+console.log('PASS: valid theme, unsafe values rejected, unknown fields discarded');
