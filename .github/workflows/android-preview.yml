@@ -14,7 +14,7 @@ permissions:
 jobs:
   emulator:
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -44,4 +44,4 @@ jobs:
           profile: pixel_5
           emulator-boot-timeout: 240
           disable-animations: true
-          script: $RUNNER_TEMP/gradle-8.9/bin/gradle -p mobile/android --no-daemon --console=plain :app:connectedDebugAndroidTest
+          script: $RUNNER_TEMP/gradle-8.9/bin/gradle -p mobile/android --no-daemon --console=plain :app:connectedDebugAndroidTest || { adb logcat -d -s OpenCVUtils:E AndroidRuntime:E; exit 1; }

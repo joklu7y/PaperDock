@@ -11,6 +11,7 @@ import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import com.paddle.ocr.PaddleOCR
+import com.paddle.ocr.util.OpenCVUtils
 import java.io.File
 import java.io.FileOutputStream
 import kotlinx.coroutines.Dispatchers
@@ -25,6 +26,7 @@ internal data class InputDocument(val uri: Uri, val name: String, val pdf: Boole
 internal class DocumentProcessor(private val context: Context) {
     suspend fun recognize(input: List<InputDocument>, progress: suspend (Int, Int) -> Unit): String =
         withContext(Dispatchers.IO) {
+            check(OpenCVUtils.init(context)) { "无法加载 OCR 图像处理组件。" }
             val recognizer = withContext(NonCancellable) { PaddleOCR.create(context) }
             try {
                 val sections = mutableListOf<String>()

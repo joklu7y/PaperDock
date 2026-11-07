@@ -15,6 +15,8 @@ gradle :app:assembleDebug
 
 生成 `app/build/outputs/apk/debug/app-debug.apk`。这是调试签名预览包。测试可在已经授权的设备或模拟器上运行 `gradle :app:connectedDebugAndroidTest`，用自制中英文图片核对图像识别、图片转 PDF 和扫描 PDF 识别。公开源码不包含模型、签名密钥、APK 或测试原件。
 
+只需要给 64 位 ARM 手机安装时，可用 `gradle :app:assembleDebug -PpaperdockAbi=arm64-v8a` 缩小安装包。默认构建保留各平台 ABI，适用于模拟器测试。
+
 ## 第三方组件
 
 - `vendor/ppocr-sdk` 采用 [PaddleOCR 安卓 SDK](https://github.com/PaddlePaddle/PaddleOCR/tree/dab3fe35379033fdcb2d0e9572fac0b36c9a9ebf/deploy/ppocr-android/ppocr-sdk) 的固定源码，保留 [Apache-2.0](vendor/ppocr-sdk/LICENSE) 和源文件版权声明。此处 Gradle 配置为 PaperDock 独立构建而编写。
