@@ -1,0 +1,27 @@
+name: iOS preview build
+
+on:
+  push:
+    branches: [main, mobile/ios-preview]
+    paths:
+      - 'mobile/ios/**'
+      - '.github/workflows/ios-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Compile without signing
+        working-directory: mobile/ios
+        run: |
+          xcodebuild -version
+          xcodebuild -project PaperDockMobile.xcodeproj -target PaperDockMobile \
+            -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
