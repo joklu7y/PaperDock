@@ -1,52 +1,22 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import Appearance from './appearance';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  BookOpen,
-  Check,
-  Eye,
-  EyeOff,
-  FileDown,
-  FileText,
-  Files,
-  FolderOpen,
-  ImageIcon,
-  LockKeyhole,
-  PenLine,
-  RotateCw,
-  ScanText,
-  ShieldCheck,
-  Upload,
-  WandSparkles,
+  ArrowRightLeft, ClipboardList, Download, ExternalLink, FileDown, FolderOpen, GitCompareArrows, House, LayoutGrid,
+  Menu, Palette, PenLine, ScanText, Search, ShieldCheck, Table2, X, type LucideIcon,
 } from 'lucide-react';
+import Appearance from './appearance';
+import { API_URL, WorkbenchContext, filenameOf, readError, type Workbench } from './api';
+import { Button, Card, Empty, IconButton, LinearProgress, PageHeader } from './ui';
+import OcrView from './views/ocr';
+import TablesView from './views/tables';
+import PagesView from './views/pages';
+import AnnotateView from './views/annotate';
+import FormsView from './views/forms';
+import CompareView from './views/compare';
+import ConvertView from './views/convert';
+import SecurityView from './views/security';
 
-type QueueFile = {
-  name: string;
-  size: string;
-  type: string;
-  status: string;
-  source: File;
-  recognized?: OcrItem;
-};
-type OcrResult = {
-  lines?: OcrLine[];
-  text: string;
-  job_id: string;
-  exports: Record<string, string>;
-  pages: number;
-  filename?: string;
-  items?: OcrItem[];
-};
-type OcrItem = {
-  lines?: OcrLine[];
-  filename: string;
-  text: string;
-  pages: number;
-  job_id: string;
-};
-type RecentRun = { name: string; pages: number; at: string };
-type OcrLine = { text: string; score: number; page: number };
 type SavedDownload = { id: string; name: string; status: string; path?: string; blob?: Blob };
 declare global {
   interface Window {
@@ -54,63 +24,67 @@ declare global {
   }
 }
 
-const errorMessage = (detail: unknown, fallback: string) => {
-  if (typeof detail === 'string') return detail;
-  if (Array.isArray(detail)) {
-    const messages = detail
-      .map((item) =>
-        item && typeof item === 'object' && 'msg' in item
-          ? String(item.msg)
-          : '',
-      )
-      .filter(Boolean);
-    return messages.length ? messages.join('；') : fallback;
-  }
-  return fallback;
-};
-const nav = [
-  [ScanText, '智能 OCR'],
-  [Files, 'PDF 工具'],
-  [LockKeyhole, '安全与签名'],
-] as const;
-const API_URL = 'http://127.0.0.1:8001';
-const OCR_QUEUE_LIMIT = 10;
+type ViewId = 'home' | 'ocr' | 'tables' | 'pages' | 'annotate' | 'forms' | 'compare' | 'convert' | 'security' | 'downloads' | 'appearance';
+type Destination = { id: ViewId; label: string; icon: LucideIcon; description: string; keywords: string };
+const tools: Destination[] = [
+  { id: 'ocr', label: '文字识别', icon: ScanText, description: '图片、扫描件、截图转可编辑文字', keywords: 'ocr 识别 扫描 手写 截图 文字' },
+  { id: 'tables', label: '表格与版面', icon: Table2, description: '表格转 Excel，双栏/图文混排还原 Word', keywords: '表格 excel csv 版面 双栏 多栏 页眉 页脚 markdown' },
+  { id: 'pages', label: '页面整理', icon: LayoutGrid, description: '拖拽排序、旋转、删除、合并、拆分、水印', keywords: '页面 排序 拖拽 旋转 删除 合并 拆分 提取 水印 裁切 空白页' },
+  { id: 'annotate', label: '批注与签名', icon: PenLine, description: '高亮、便签、画笔，按类别/状态管理；手写签名', keywords: '批注 高亮 下划线 删除线 便签 画笔 签名 注释' },
+  { id: 'forms', label: '填写表单', icon: ClipboardList, description: '填写 PDF 中的表单字段并可扁平化', keywords: '表单 填写 扁平化 问卷' },
+  { id: 'compare', label: '文档对比', icon: GitCompareArrows, description: '两个版本逐字比对，生成并排对比 PDF', keywords: '对比 比较 差异 版本 校对' },
+  { id: 'convert', label: '格式转换', icon: ArrowRightLeft, description: '图片/截图转 PDF；PDF 转 Word、PPT、EPUB 等', keywords: '转换 word ppt pptx odt epub markdown txt 图片 截图 pdf' },
+  { id: 'security', label: '安全与修复', icon: ShieldCheck, description: '加密、权限、永久涂黑、清理元数据、修复', keywords: '密码 加密 权限 涂黑 脱敏 元数据 修复 损坏' },
+];
+const extras: Destination[] = [
+  { id: 'downloads', label: '下载记录', icon: Download, description: '', keywords: '下载 保存 记录' },
+  { id: 'appearance', label: '外观设置', icon: Palette, description: '', keywords: '外观 主题 壁纸 颜色' },
+];
 
 export default function Home() {
+  const [view, setView] = useState<ViewId>('home');
+  const [drawer, setDrawer] = useState(true);
+  const [query, setQuery] = useState('');
+  const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
+  const [task, setTask] = useState('');
+  const [seconds, setSeconds] = useState(0);
   const [downloads, setDownloads] = useState<SavedDownload[]>([]);
+  const abort = useRef<AbortController | null>(null);
+  const searchBox = useRef<HTMLInputElement>(null);
+
+  const notify = useCallback((text: string) => setToast({ id: Date.now(), text }), []);
   useEffect(() => {
-    const restore = () => { void window.pywebview?.api.list_downloads().then(records => setDownloads(old => [...old, ...records.filter(r => !old.some(x => x.id === r.id))])).catch(() => setNotice('下载记录暂时无法读取。')); };
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), Math.min(10000, 4000 + toast.text.length * 60));
+    return () => clearTimeout(timer);
+  }, [toast]);
+  useEffect(() => {
+    if (!task) return;
+    setSeconds(0);
+    const timer = setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => clearInterval(timer);
+  }, [task]);
+  useEffect(() => {
+    const restore = () => { void window.pywebview?.api.list_downloads().then((records) => setDownloads((old) => [...old, ...records.filter((r) => !old.some((x) => x.id === r.id))])).catch(() => notify('下载记录暂时无法读取。')); };
     if (window.pywebview?.api) restore();
     window.addEventListener('pywebviewready', restore);
     return () => window.removeEventListener('pywebviewready', restore);
-  }, []);
-  const openDownload = async (id: string, folder: boolean) => {
-    try {
-      const response = await window.pywebview?.api.open_download(id, folder);
-      if (response?.error) setNotice(response.error);
-    } catch { setNotice('无法打开，请检查文件是否存在以及默认打开程序。'); }
-  };
-  const projectPicker = useRef<HTMLInputElement>(null);
-  const [savingProject, setSavingProject] = useState(false);
-  const taskAbort = useRef<AbortController | null>(null);
-  const [taskLabel, setTaskLabel] = useState('');
-  const [taskSeconds, setTaskSeconds] = useState(0);
+  }, [notify]);
+  // "/" focuses the tool search, like Google apps.
   useEffect(() => {
-    if (!taskLabel) return;
-    setTaskSeconds(0);
-    const timer = setInterval(() => setTaskSeconds(seconds => seconds + 1), 1000);
-    return () => clearInterval(timer);
-  }, [taskLabel]);
-  const taskFetch = (url: string, body: FormData, label: string) => {
-    const controller = new AbortController(); taskAbort.current = controller;
-    setTaskLabel(label);
-    return fetch(url, { method: 'POST', body, signal: controller.signal });
-  };
+    const onKey = (event: KeyboardEvent) => {
+      const typing = event.target instanceof HTMLElement && /INPUT|TEXTAREA|SELECT/.test(event.target.tagName);
+      if (event.key === '/' && !typing) { event.preventDefault(); searchBox.current?.focus(); }
+      if (event.key === 'Escape') setQuery('');
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
-  const saveBlob = async (blob: Blob, name: string) => {
+  const saveBlob = useCallback(async (blob: Blob, name: string) => {
     const id = crypto.randomUUID();
-    const update = (status: string, path?: string) => setDownloads(old => old.map(item => item.id === id ? { ...item, status, path } : item));
-    setDownloads(old => [{ id, name, blob, status: '等待选择保存位置' }, ...old]);
+    const update = (status: string, path?: string) => setDownloads((old) => old.map((item) => (item.id === id ? { ...item, status, path } : item)));
+    setDownloads((old) => [{ id, name, blob, status: '等待选择保存位置' }, ...old]);
     try {
       if (window.pywebview?.api) {
         const encoded = await new Promise<string>((resolve, reject) => {
@@ -120,917 +94,175 @@ export default function Home() {
           reader.readAsDataURL(blob);
         });
         const saved = await window.pywebview.api.save_file(name, encoded);
-        if (saved.cancelled) { update('已取消，可重新保存'); setNotice('已取消保存，可在下载记录中重新保存。'); return false; }
+        if (saved.cancelled) { update('已取消，可重新保存'); notify('已取消保存，可在下载记录中重新保存。'); return false; }
         if (saved.error || !saved.path) throw new Error(saved.error || '未返回保存位置');
         update('已保存', saved.path);
-        if (saved.record_id) setDownloads(old => old.map(item => item.id === id ? { ...item, id: saved.record_id! } : item));
-        setNotice(saved.warning || `文件已保存到：${saved.path}`);
+        if (saved.record_id) setDownloads((old) => old.map((item) => (item.id === id ? { ...item, id: saved.record_id! } : item)));
+        notify(saved.warning || `已保存：${saved.path}`);
       } else {
-        if (location.pathname.startsWith('/desktop')) throw new Error('桌面保存接口尚未就绪，请关闭软件后重新启动。');
-        const link = document.createElement('a');
+        if (location.pathname.startsWith('/desktop')) throw new Error('桌面保存接口尚未就绪，请重新启动软件。');
         const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
         link.href = url; link.download = name; document.body.appendChild(link); link.click(); link.remove();
         setTimeout(() => URL.revokeObjectURL(url), 60000);
-        update('已交给浏览器，请查看浏览器下载记录');
-        setNotice('已交给浏览器保存，请查看浏览器下载记录。');
+        update('已交给浏览器下载');
+        notify(`已开始下载：${name}`);
       }
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : '保存失败';
-      update(`保存失败：${message}`); setNotice(message); return false;
+      update(`保存失败：${message}`); notify(message); return false;
     }
-  };
-  const ocrPicker = useRef<HTMLInputElement>(null);
-  const pdfPicker = useRef<HTMLInputElement>(null);
-  const toolPicker = useRef<HTMLInputElement>(null);
-  const [active, setActive] = useState('智能 OCR');
-  const [files, setFiles] = useState<QueueFile[]>([]);
-  const [result, setResult] = useState<OcrResult | null>(null);
-  const [draft, setDraft] = useState('');
-  const [notice, setNotice] = useState(
-    '本地工作台已就绪。文件仅在此电脑处理。',
-  );
-  const [running, setRunning] = useState(false);
-  const stopOcr = useRef(false);
-  const [stoppingOcr, setStoppingOcr] = useState(false);
-  const [ocrProgress, setOcrProgress] = useState({ completed: 0, total: 0 });
-  const [previewUrl, setPreviewUrl] = useState('');
-  const [reviewIndex, setReviewIndex] = useState(0);
-  const selectedJobId = result?.items?.[reviewIndex]?.job_id;
-  const selectedSource = selectedJobId
-    ? files.find(file => file.recognized?.job_id === selectedJobId)?.source
-    : undefined;
-  useEffect(() => {
-    if (!selectedSource) { setPreviewUrl(''); return; }
-    const url = URL.createObjectURL(selectedSource); setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [selectedSource]);
-  const [ocrMode, setOcrMode] = useState<'auto' | 'handwriting' | 'english'>('auto');
-  const [recentRuns, setRecentRuns] = useState<RecentRun[]>([]);
-  const [savingCorrection, setSavingCorrection] = useState(false);
-  const [converting, setConverting] = useState<string | null>(null);
-  const [pdfFiles, setPdfFiles] = useState<File[]>([]);
-  const [pages, setPages] = useState('');
-  const [rotationDegrees, setRotationDegrees] = useState('90');
-  const [watermarkText, setWatermarkText] = useState('');
-  const [watermarkPages, setWatermarkPages] = useState('1');
-  const [cropMargin, setCropMargin] = useState('0');
-  const [pdfRunning, setPdfRunning] = useState<string | null>(null);
-  const [toolFiles, setToolFiles] = useState<File[]>([]);
-  const [password, setPassword] = useState('');
-  const [ownerPassword, setOwnerPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [showOwnerPassword, setShowOwnerPassword] = useState(false);
-  const [securityPermissions, setSecurityPermissions] = useState<string[]>([]);
-  const [redactText, setRedactText] = useState('');
+  }, [notify]);
 
-  useEffect(() => {
+  const post = useCallback<Workbench['post']>(async (path, body, label) => {
+    const controller = new AbortController();
+    abort.current = controller;
+    setTask(label);
     try {
-      const saved = JSON.parse(localStorage.getItem('paperdock-recent-ocr') || '[]');
-      if (Array.isArray(saved)) setRecentRuns(saved.slice(0, 5));
+      return await fetch(`${API_URL}${path}`, body instanceof FormData
+        ? { method: 'POST', body, signal: controller.signal }
+        : { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' }, signal: controller.signal });
     } catch {
-      // A damaged local preference must never block document processing.
+      notify(controller.signal.aborted ? '已取消等待。本地计算可能仍在后台完成。' : '无法连接本地服务，请重新启动 PaperDock 后再试。');
+      return null;
+    } finally {
+      setTask((current) => (current === label ? '' : current));
     }
-  }, []);
+  }, [notify]);
 
-  const combinedText = (items: OcrItem[], edited?: string, editedIndex = -1) =>
-    items
-      .map((item, index) => `【文件：${item.filename}】\n${index === editedIndex ? edited || '' : item.text}`.trim())
-      .join('\n\n');
+  const saveResponse = useCallback<Workbench['saveResponse']>(async (response, fallback) => {
+    if (!response) return null;
+    if (!response.ok) { notify(await readError(response, '处理失败')); return null; }
+    const blob = await response.blob();
+    return (await saveBlob(blob, filenameOf(response, fallback))) ? blob : null;
+  }, [notify, saveBlob]);
 
-  const add = (list: FileList | null) => {
-    if (running) return;
-    if (!list?.length) return;
-    const remaining = OCR_QUEUE_LIMIT - files.length;
-    if (remaining <= 0) {
-      setNotice(`批量队列最多保留 ${OCR_QUEUE_LIMIT} 个文件。请先删除旧文件，再继续添加。`);
-      return;
-    }
-    const selected = Array.from(list);
-    const accepted = selected.slice(0, remaining);
-    const next = accepted.map((source) => ({
-      name: source.name,
-      size:
-        source.size > 1048576
-          ? `${(source.size / 1048576).toFixed(1)} MB`
-          : `${Math.ceil(source.size / 1024)} KB`,
-      type: source.name.split('.').pop()?.toUpperCase() || '文件',
-      status: '等待处理',
-      source,
-    }));
-    setFiles((old) => [...old, ...next]);
-    setNotice(
-      selected.length > accepted.length
-        ? `已加入 ${next.length} 个文件；队列上限为 ${OCR_QUEUE_LIMIT} 个，其余文件未加入。`
-        : `已加入 ${next.length} 个文件，当前共 ${files.length + next.length}/${OCR_QUEUE_LIMIT} 个。`,
-    );
+  const workbench = useMemo<Workbench>(() => ({ notify, saveBlob, post, saveResponse, busy: !!task }), [notify, saveBlob, post, saveResponse, task]);
+  const matches = query.trim() ? [...tools, ...extras].filter((d) => `${d.label} ${d.description} ${d.keywords}`.toLowerCase().includes(query.trim().toLowerCase())) : [];
+  const go = (id: ViewId) => { setView(id); setQuery(''); window.scrollTo({ top: 0 }); };
+  const openDownload = async (id: string, folder: boolean) => {
+    try { const response = await window.pywebview?.api.open_download(id, folder); if (response?.error) notify(response.error); }
+    catch { notify('无法打开，请检查文件是否存在。'); }
   };
-  const runOcr = async (retryOnly = false) => {
-    if (!files.length) return setNotice('请先选择 PDF 或图片。');
-    setRunning(true);
-    stopOcr.current = false;
-    setStoppingOcr(false);
-    const targets = files.filter(item => !retryOnly || !item.recognized);
-    setOcrProgress({ completed: 0, total: targets.length });
-    setReviewIndex(0);
-    setNotice(`准备逐份识别 ${files.length} 个文件；可在失败后只重试失败项。`);
-    try {
-      const completed = new Map<File, OcrItem>();
-      if (retryOnly) files.forEach(item => { if (item.recognized) completed.set(item.source, result?.items?.find(r => r.job_id === item.recognized?.job_id) || item.recognized); });
-      for (let index = 0; index < files.length; index += 1) {
-        const item = files[index];
-        if (stopOcr.current) break;
-        if (retryOnly && item.recognized) continue;
-        setFiles((old) => old.map((file, fileIndex) => fileIndex === index ? { ...file, recognized: undefined, status: '识别中' } : file));
-        setNotice(`正在识别第 ${index + 1}/${files.length} 个文件：${item.name}`);
-        const body = new FormData();
-        body.append('file', item.source);
-        body.append('language', ocrMode === 'english' ? 'en' : 'ch');
-        try {
-          const response = await fetch(`${API_URL}/ocr`, { method: 'POST', body });
-          const data = (await response.json()) as OcrResult & { detail?: unknown };
-          if (!response.ok) throw new Error(errorMessage(data.detail, 'OCR 服务错误'));
-          const recognized = { filename: data.filename || item.name, text: data.text, pages: data.pages, job_id: data.job_id, lines: data.lines };
-          completed.set(item.source, recognized);
-          setFiles((old) => old.map((file, fileIndex) => fileIndex === index ? { ...file, recognized, status: '已完成' } : file));
-        } catch (error) {
-          setFiles((old) => old.map((file, fileIndex) => fileIndex === index ? { ...file, status: '失败，可重试' } : file));
-          setNotice(`“${item.name}”识别失败：${error instanceof Error ? error.message : '未知错误'}；其余文件将继续处理。`);
-        }
-        setOcrProgress(old => ({ ...old, completed: old.completed + 1 }));
-      }
-      const done = files.flatMap(item => completed.has(item.source) ? [completed.get(item.source)!] : []);
-      if (!done.length) return setNotice('没有文件识别成功。请检查失败项后点击“重试失败项”。');
-      const combined = await fetch(`${API_URL}/ocr/combine`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: done }),
-      });
-      const data = (await combined.json()) as OcrResult & { detail?: unknown };
-      if (!combined.ok) throw new Error(errorMessage(data.detail, '合并导出失败'));
-      setResult(data);
-      setDraft(done[0].text);
-      const nextRecent = [{ name: data.filename || '批量识别', pages: data.pages, at: new Date().toLocaleString() }, ...recentRuns].slice(0, 5);
-      setRecentRuns(nextRecent);
-      localStorage.setItem('paperdock-recent-ocr', JSON.stringify(nextRecent));
-      setNotice(stopOcr.current ? `队列已停止，保留 ${done.length} 份成功结果，可继续处理未完成文件。` : done.length === files.length ? `识别完成：${done.length} 个文件，可逐份校对后统一导出。` : `已完成 ${done.length}/${files.length} 个文件；失败项可重试。`);
-    } catch (error) {
-      setNotice(
-        `识别未完成：${error instanceof Error ? error.message : '未知错误'}`,
-      );
-    } finally {
-      setRunning(false);
-      setStoppingOcr(false);
-    }
-  };
-  const downloadJobExport = async (jobId: string, name: string) => {
-    try {
-    const response = await fetch(`${API_URL}/download/${jobId}/${name}`);
-    if (!response.ok) {
-      const data = (await response.json()) as { detail?: unknown };
-      setNotice(errorMessage(data.detail, '导出文件下载失败。'));
-      return false;
-    }
-    return saveBlob(await response.blob(), name);
-    } catch {
-      setNotice('获取导出文件失败，请检查本地服务后重试。');
-      return false;
-    }
-  };
-  const saveCorrection = async () => {
-    if (!result) return;
-    setSavingCorrection(true);
-    try {
-      const editedItems = result.items?.map((item, index) => index === reviewIndex ? { ...item, text: draft } : item);
-      const finalText = editedItems ? combinedText(editedItems) : draft;
-      const response = await fetch(
-        `${API_URL}/exports/${result.job_id}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: finalText }),
-        },
-      );
-      const data = (await response.json()) as { exports?: Record<string, string>; detail?: unknown };
-      if (!response.ok || !data.exports) {
-        setNotice(errorMessage(data.detail, '校对结果保存失败。'));
-        return;
-      }
-      setResult({ ...result, text: finalText, items: editedItems, exports: data.exports });
-      await downloadJobExport(result.job_id, data.exports.docx);
-    } catch {
-      setNotice('无法连接本地导出服务，请重新启动工作台后再试。');
-    } finally {
-      setSavingCorrection(false);
-    }
-  };
-  const saveProject = async () => {
-    setSavingProject(true);
-    try {
-      const snapshot = { format: 'paperdock', version: 1, saved_at: new Date().toISOString(), result, draft, reviewIndex,
-        settings: { pages, rotationDegrees, watermarkText, watermarkPages, cropMargin, ocrMode } };
-      await saveBlob(new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' }), '我的工程.paperdock.json');
-    } finally { setSavingProject(false); }
-  };
-  const openProject = async (file?: File) => {
-    if (!file) return;
-    try {
-      const data = JSON.parse(await file.text());
-      if (data.format !== 'paperdock' || data.version !== 1 || typeof data.draft !== 'string') throw new Error('工程文件格式不正确');
-      if (data.result) {
-        const response = await fetch(`${API_URL}/ocr/combine`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: data.result.items || [{ filename: '恢复的工程', text: data.result.text, pages: data.result.pages, job_id: '' }] }) });
-        if (!response.ok) throw new Error('恢复导出文件失败');
-        setResult(await response.json());
-      } else setResult(null);
-      setDraft(data.draft); setReviewIndex(Number(data.reviewIndex) || 0);
-      const s = data.settings || {};
-      setOcrMode(['auto', 'handwriting', 'english'].includes(s.ocrMode) ? s.ocrMode : 'auto');
-      setPages(String(s.pages || '')); setRotationDegrees(String(s.rotationDegrees || '90'));
-      setWatermarkText(String(s.watermarkText || '')); setWatermarkPages(String(s.watermarkPages || ''));
-      setCropMargin(String(s.cropMargin || '0')); setFiles([]); setPdfFiles([]); setToolFiles([]);
-      setNotice('工程已恢复。已保留校对文字与页面设置；继续处理原文件时请重新选择原文件。');
-    } catch (error) { setNotice(error instanceof Error ? error.message : '打开工程失败'); }
-  };
-  const pdfAction = async (
-    action: 'merge' | 'rotate' | 'delete' | 'extract' | 'watermark' | 'crop',
-  ) => {
-    if (taskLabel) return setNotice('请等待当前任务结束。');
-    if (!pdfFiles.length) return setNotice('请先选择 PDF 文件。');
-    if (action === 'merge' && pdfFiles.length < 2) return setNotice('合并至少需要选择两份 PDF。');
-    if (['delete', 'extract'].includes(action) && !pages.trim()) return setNotice('删除或提取前，请填写需要处理的页码。');
-    if (action === 'watermark' && !watermarkText.trim()) return setNotice('请先输入水印文字。');
-    const body = new FormData();
-    let url = `${API_URL}/pdf/transform`;
-    if (action === 'merge') {
-      url = `${API_URL}/pdf/merge`;
-      pdfFiles.forEach((x) => body.append('files', x));
-    } else {
-      body.append('file', pdfFiles[0]);
-      body.append('action', action);
-      body.append('pages', action === 'watermark' ? watermarkPages : pages);
-      body.append('degrees', rotationDegrees);
-      body.append('watermark_text', watermarkText);
-      body.append('crop_margin', cropMargin);
-    }
-    setPdfRunning(action);
-    setNotice('正在处理 PDF，请稍候…');
-    try {
-      const response = await taskFetch(url, body, '正在处理 PDF');
-      if (!response.ok) {
-        const data = (await response.json()) as { detail?: unknown };
-        setNotice(errorMessage(data.detail, 'PDF 处理失败。'));
-        return;
-      }
-      await downloadResponse(response, action === 'merge' ? 'merged.pdf' : 'processed.pdf');
-    } catch {
-      setNotice(taskAbort.current?.signal.aborted ? '已取消等待及下载。当前本地计算可能仍在完成，请稍后再开始新任务。' : '本地 PDF 服务暂时无法连接，请稍后重试。');
-    } finally {
-      setPdfRunning(null);
-      setTaskLabel('');
-    }
-  };
-  const downloadResponse = async (response: Response, fallback: string) => {
-    if (!response.ok) {
-      const data = (await response.json()) as { detail?: string };
-      setNotice(errorMessage(data.detail, '处理失败。'));
-      return;
-    }
-    const filename =
-      response.headers
-        .get('content-disposition')
-        ?.match(/filename="?([^";]+)/)?.[1] || fallback;
-    return saveBlob(await response.blob(), filename);
-  };
-  const convert = async (target: string) => {
-    if (taskLabel) return setNotice('请等待当前任务结束。');
-    if (!toolFiles.length) return setNotice('请先选择要转换的文件。');
-    if (target === 'pdf' && toolFiles.length > 10) {
-      return setNotice('图片转 PDF 一次最多上传 10 张图片。');
-    }
-    if (target !== 'pdf' && toolFiles.length !== 1) {
-      return setNotice('除图片转 PDF 外，其他转换一次请选择一个文件。');
-    }
-    setConverting(target);
-    setNotice(`正在处理 ${toolFiles.length} 个文件，请稍候…`);
-    try {
-      const body = new FormData();
-      toolFiles.forEach((file) => body.append('files', file));
-      body.append('target', target);
-      const response = await taskFetch(`${API_URL}/convert`, body, '正在转换格式');
-      if (response.status === 422) {
-        setNotice('转换服务仍是旧版本，尚未支持批量图片。请重新运行 run-local.ps1 后刷新本页面。');
-        return;
-      }
-      const fallbackNames: Record<string, string> = {
-        pdf: 'converted.pdf',
-        txt: 'converted.txt',
-        docx: 'converted.docx',
-        xlsx: 'converted.xlsx',
-        images: 'pages.zip',
-      };
-      await downloadResponse(response, fallbackNames[target] || 'converted-file');
-    } catch {
-      setNotice(taskAbort.current?.signal.aborted ? '已取消等待及下载。当前本地计算可能仍在完成。' : '无法连接本地转换服务，请重新启动软件后再试。');
-    } finally {
-      setConverting(null);
-      setTaskLabel('');
-    }
-  };
-  const secure = async (operation: string) => {
-    if (taskLabel) return setNotice('请等待当前任务结束。');
-    if (!toolFiles.length) return setNotice('请先选择 PDF 文件。');
-    if (operation === 'protect' && (!password || !ownerPassword)) {
-      return setNotice('设置 AES-256 时请同时填写打开密码和所有者密码。');
-    }
-    if (operation === 'unlock' && !password) {
-      return setNotice('移除密码前必须输入该 PDF 的打开密码。');
-    }
-    const body = new FormData();
-    body.append('file', toolFiles[0]);
-    body.append('password', password);
-    body.append('owner_password', ownerPassword);
-    body.append('redact_text', redactText);
-    body.append('permissions', JSON.stringify(securityPermissions));
-    try {
-      await downloadResponse(
-        await taskFetch(`${API_URL}/security/${operation}`, body, '正在处理安全操作'),
-        operation === 'unlock' ? 'unlocked.pdf' : 'secured.pdf',
-      );
-    } catch {
-      setNotice(taskAbort.current?.signal.aborted ? '已取消等待及下载。当前本地计算可能仍在完成。' : '无法连接本地安全服务，请重新启动软件后再试。');
-    } finally {
-      setTaskLabel('');
-    }
-  };
-  const ocrView = (
-    <div className="grid gap-6 xl:grid-cols-2">
-      <div>
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold tracking-widest text-[#75827d]">
-              识别中心
-            </p>
-            <h2 className="mt-1 text-2xl font-semibold">从原件到可编辑文档</h2>
-          </div>
-          <span className="rounded-full bg-[#eaf5ef] px-3 py-1 text-xs font-medium text-[#167c69]">
-            本地处理
-          </span>
-        </div>
-        <button
-          onClick={() => ocrPicker.current?.click()}
-          onDrop={(e) => {
-            e.preventDefault();
-            add(e.dataTransfer.files);
-          }}
-          onDragOver={(e) => e.preventDefault()}
-          className="flex min-h-56 w-full flex-col items-center justify-center rounded-3xl border-2 border-dashed border-[#a8c9bc] bg-[#eaf5ef] p-8 text-center"
-        >
-          <div className="mb-4 rounded-2xl bg-white p-4 text-[#167c69]">
-            <Upload size={25} />
-          </div>
-          <b className="text-lg">拖入 PDF 或图片</b>
-          <p className="mt-2 text-sm text-[#64746e]">
-            支持 PDF、JPG、PNG、BMP、TIF；可分次添加，队列最多 10 个文件。
-          </p>
-          <span className="mt-5 rounded-lg bg-[#167c69] px-4 py-2 text-sm text-white">
-            选择/追加文件
-          </span>
-          <input
-            ref={ocrPicker}
-            type="file"
-            multiple
-            className="hidden"
-            accept=".pdf,.jpg,.jpeg,.png,.bmp,.tif,.tiff"
-            onChange={(e) => {
-              add(e.target.files);
-              e.target.value = '';
-            }}
-          />
-        </button>
-        {result && <div className="mt-6 rounded-2xl border bg-white p-4"><h3 className="font-semibold">原文件对照 · {result.items?.[reviewIndex]?.filename}</h3>{previewUrl ? selectedSource?.name.toLowerCase().endsWith('.pdf') ? <iframe title="PDF 原文件对照" src={previewUrl} className="mt-3 h-[600px] w-full" /> : <img alt="当前校对文件原图" src={previewUrl} className="mt-3 max-h-[800px] w-full object-contain" /> : <p className="mt-3 text-sm">原图未加载。打开工程后需重新识别原文件才能显示本次结果对应的原图。</p>}</div>}
-        <div className="mt-6 overflow-hidden rounded-2xl border border-[#dce2de] bg-white">
-          <div className="flex justify-between border-b border-[#edf0ee] px-5 py-4">
-            <b>批量队列</b>
-            <span className="text-xs text-[#167c69]">
-              {files.length}/{OCR_QUEUE_LIMIT} 个文件
-            </span>
-          </div>
-          {files.length ? (
-            files.map((f, i) => (
-              <div
-                key={`${f.name}-${i}`}
-                className="flex items-center gap-3 border-b border-[#edf0ee] px-5 py-3 last:border-0"
-              >
-                <ImageIcon size={18} className="text-[#167c69]" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{f.name}</p>
-                  <p className="text-xs text-[#83908b]">
-                    {f.type} · {f.size}
-                  </p>
-                </div>
-                <span className="text-xs text-[#a96a09]">{f.status}</span>
-                <button
-                  type="button"
-                  disabled={running}
-                  onClick={() => {
-                    setFiles((old) => old.filter((_, index) => index !== i));
-                    setNotice(`已从批量队列删除“${f.name}”。`);
-                  }}
-                  className="shrink-0 rounded-lg border border-[#e6c6c2] px-2 py-1 text-xs text-[#a54848] hover:bg-[#fff3f2] disabled:cursor-not-allowed disabled:opacity-50"
-                  aria-label={`从队列删除 ${f.name}`}
-                >
-                  删除
-                </button>
-              </div>
-            ))
-          ) : (
-            <p className="p-8 text-center text-sm text-[#83908b]">
-              上传后可开始识别。
-            </p>
-          )}
-        </div>
-      </div>
-      <aside className="space-y-5">
-        <div className="rounded-2xl bg-[#183c35] p-5 text-white">
-          <WandSparkles size={20} className="text-[#8be2c1]" />
-          <h3 className="mt-4 text-lg font-semibold">识别与模型策略</h3>
-          <p className="mt-2 text-sm leading-6 text-[#bad0c8]">
-            自动扶正、去噪与阅读顺序整理已接入。手写模式会优先保留笔画和纸面颜色，适合拍照笔记校对。
-          </p>
-        </div>
-        <div className="rounded-2xl border border-[#dce2de] bg-white p-5">
-          <b>本次识别</b>
-          <label className="mt-3 block text-sm text-[#65756f]">识别模式
-            <select value={ocrMode} onChange={(event) => setOcrMode(event.target.value as typeof ocrMode)} className="mt-2 w-full rounded-xl border border-[#dce2de] bg-white px-3 py-2">
-              <option value="auto">自动（中英混合）</option>
-              <option value="handwriting">手写优先（中文/中英混合）</option>
-              <option value="english">英文优先</option>
-            </select>
-          </label>
-          <p className="mt-3 text-xs leading-5 text-[#65756f]">手写内容请优先人工校对；系统会保留原图，不会覆盖源文件。</p>
-          <button
-            disabled={running}
-            onClick={() => void runOcr()}
-            className="mt-5 flex w-full justify-center gap-2 rounded-xl bg-[#167c69] py-2.5 text-sm font-semibold text-white disabled:opacity-60"
-          >
-            <ScanText size={17} />
-            {running ? '正在识别…' : '开始批量识别'}
-          </button>
-          {!running && files.some(file => !file.recognized) && files.some(file => file.recognized) && <button className="mt-3 w-full rounded-xl border p-2" onClick={() => void runOcr(true)}>仅重试失败 / 未完成文件</button>}
-          {running && <div className="mt-3" role="status"><progress className="w-full" max={ocrProgress.total || 1} value={ocrProgress.completed} /><p className="text-sm">已处理 {ocrProgress.completed} / {ocrProgress.total} 个文件</p><button disabled={stoppingOcr} className="mt-2 rounded-xl border p-2" onClick={() => { stopOcr.current = true; setStoppingOcr(true); }}>{stoppingOcr ? '等待当前文件完成后停止…' : '停止后续队列'}</button><p className="mt-2 text-xs">当前文件完成后停止，已成功识别的结果会保留。</p></div>}
-        </div>
-        {result && (
-          <div className="rounded-2xl border border-[#bde1d0] bg-white p-5">
-            <div className="flex justify-between">
-              <b>人工校对（逐份文件）</b>
-              <span className="text-xs text-[#167c69]">{result.pages} 页</span>
-            </div>
-            {result.items && result.items.length > 1 && (
-              <select
-                value={reviewIndex}
-                onChange={(event) => {
-                  const index = Number(event.target.value);
-                  setReviewIndex(index);
-                  setDraft(result.items?.[index]?.text || '');
-                }}
-                className="mt-3 w-full rounded-xl border border-[#dce2de] bg-white px-3 py-2 text-sm"
-              >
-                {result.items.map((item, index) => <option key={`${item.job_id}-${index}`} value={index}>{index + 1}. {item.filename}（{item.pages} 页）</option>)}
-              </select>
-            )}
-            <textarea
-              value={draft}
-              onChange={(e) => { const text = e.target.value; setDraft(text); setResult(old => old ? { ...old, items: old.items?.map((item, index) => index === reviewIndex ? { ...item, text } : item) } : old); }}
-              className="mt-3 h-96 w-full rounded-xl border border-[#dce2de] p-3 text-sm leading-6 outline-none focus:border-[#167c69]"
-            />
-            <details className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3"><summary>低置信度原始识别内容（{(result.items?.[reviewIndex]?.lines || []).filter(line => line.score < 0.85).length} 处）</summary><p className="mt-2 text-xs">模型评分低于 85% 的行供校对参考，不代表错误概率；修改文字后此原始记录不变。无标记也不保证识别正确。</p>{(result.items?.[reviewIndex]?.lines || []).filter(line => line.score < 0.85).map((line, index) => <p key={index} className="mt-2 text-sm">第 {line.page} 页 · {Math.round(line.score * 100)}%：{line.text}</p>)}</details>
-            <button
-              onClick={saveCorrection}
-              disabled={savingCorrection}
-              className="mt-3 w-full rounded-xl border border-[#167c69] py-2 text-sm font-medium text-[#167c69]"
-            >
-              {savingCorrection ? '正在保存并下载…' : '保存校对并重新导出 Word'}
-            </button>
-            <div className="mt-3 flex gap-2">
-              {Object.entries(result.exports).map(([label, name]) => (
-                <button
-                  key={name}
-                  className="rounded-lg bg-[#eaf5ef] px-2 py-1 text-xs font-medium text-[#167c69]"
-                  onClick={() => void downloadJobExport(result.job_id, name)}
-                >
-                  {label.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {recentRuns.length > 0 && (
-          <div className="rounded-2xl border border-[#dce2de] bg-white p-5">
-            <b>最近识别</b>
-            <ul className="mt-3 space-y-2 text-xs text-[#65756f]">
-              {recentRuns.map((item, index) => <li key={`${item.name}-${item.at}-${index}`} className="flex justify-between gap-3"><span className="truncate">{item.name}</span><span className="shrink-0">{item.pages} 页 · {item.at}</span></li>)}
-            </ul>
-          </div>
-        )}
-        <div className="rounded-xl border border-[#bde1d0] bg-[#edf9f2] px-4 py-3 text-sm text-[#17664f]">
-          {notice}
-        </div>
-      </aside>
-    </div>
+
+  const navItem = (d: Destination, badge?: ReactNode) => (
+    <button key={d.id} type="button" onClick={() => go(d.id)} aria-current={view === d.id ? 'page' : undefined}
+      className={`flex h-12 w-full items-center gap-3 rounded-full px-4 text-sm transition-colors ${view === d.id ? 'bg-m-secondary-container font-medium text-m-on-secondary-container' : 'text-m-on-surface-variant hover:bg-m-on-surface/8'}`}>
+      <d.icon size={20} />
+      <span className="flex-1 text-left">{d.label}</span>
+      {badge}
+    </button>
   );
-  const pdfView = (
-    <div className="mx-auto max-w-4xl">
-      <p className="text-xs font-semibold tracking-widest text-[#75827d]">
-        PDF 工作台
-      </p>
-      <h2 className="mt-1 text-2xl font-semibold">页面整理与基础编辑</h2>
-      <div className="mt-6 rounded-3xl border border-[#dce2de] bg-white p-6">
-        <input
-          ref={pdfPicker}
-          type="file"
-          multiple
-          accept=".pdf"
-          className="hidden"
-          onChange={(e) => {
-            const selected = Array.from(e.target.files || []);
-            if (selected.length > 10) {
-              setPdfFiles([]);
-              setNotice('PDF 工作台一次最多选择 10 份 PDF，请减少后重新选择。');
-              return;
-            }
-            setPdfFiles(selected);
-            setNotice(
-              selected.length
-                ? `已选择 ${selected.length} 份 PDF；合并时会按当前顺序排列。`
-                : '尚未选择 PDF。',
-            );
-          }}
-        />
-        <button
-          onClick={() => pdfPicker.current?.click()}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[#a8c9bc] bg-[#eaf5ef] py-12 text-[#167c69]"
-        >
-          <Upload size={20} />
-          {pdfFiles.length
-            ? `已选择 ${pdfFiles.length}/10 份 PDF`
-            : '选择 PDF 文件（最多 10 份）'}
-        </button>
-        {pdfFiles.length > 0 && (
-          <div className="mt-4 rounded-2xl border border-[#dce2de] bg-[#fafcfb] p-4">
-            <div className="flex items-center justify-between text-sm">
-              <b>已选文件（合并顺序）</b>
-              <button onClick={() => setPdfFiles([])} className="text-[#a54848]">清空</button>
-            </div>
-            <ol className="mt-2 space-y-1 text-sm text-[#65756f]">
-              {pdfFiles.map((file, index) => (
-                <li key={`${file.name}-${index}`} className="flex items-center justify-between gap-3">
-                  <span className="truncate">{index + 1}. {file.name}</span>
-                  <button
-                    onClick={() => setPdfFiles((old) => old.filter((_, itemIndex) => itemIndex !== index))}
-                    className="shrink-0 text-xs text-[#a54848]"
-                  >
-                    移除
-                  </button>
-                </li>
-              ))}
-            </ol>
-          </div>
-        )}
-        <label className="mt-5 block text-sm text-[#65756f]">
-          指定页码（例如 1,3,5 或 1，3，5；旋转/裁切留空表示全部，删除/提取必须填写）
-          <input
-            value={pages}
-            onChange={(e) => setPages(e.target.value)}
-            className="mt-2 w-full rounded-xl border border-[#dce2de] px-3 py-2"
-            placeholder="1,3,5 或 1，3，5"
-          />
-        </label>
-        <div className="mt-4 grid gap-4 rounded-2xl bg-[#f7faf8] p-4 md:grid-cols-2">
-          <label className="text-sm text-[#65756f]">
-            旋转角度
-            <select
-              value={rotationDegrees}
-              onChange={(e) => setRotationDegrees(e.target.value)}
-              className="mt-2 w-full rounded-xl border border-[#dce2de] bg-white px-3 py-2"
-            >
-              {[0, 90, 180, 270, 360].map((angle) => <option key={angle} value={angle}>{angle}°</option>)}
-            </select>
-          </label>
-          <label className="text-sm text-[#65756f]">
-            裁切边距（点，0 表示不裁切）
-            <input
-              value={cropMargin}
-              onChange={(e) => setCropMargin(e.target.value)}
-              type="number"
-              min="0"
-              className="mt-2 w-full rounded-xl border border-[#dce2de] bg-white px-3 py-2"
-            />
-          </label>
-        </div>
-        <div className="mt-4 rounded-2xl border border-[#bde1d0] bg-[#edf9f2] p-4">
-          <p className="text-sm font-semibold text-[#17664f]">整页倾斜文字水印</p>
-          <div className="mt-3 grid gap-3">
-            <label className="text-sm text-[#65756f]">
-              水印内容（可输入中英文、符号和表情）
-              <input value={watermarkText} onChange={(e) => setWatermarkText(e.target.value)} className="mt-1 w-full rounded-xl border border-[#dce2de] bg-white px-3 py-2" placeholder="例如：草稿 / 机密" />
-            </label>
-            <label className="text-sm text-[#65756f]">
-              应用页面（例如 1,3,5 或 1，3，5；留空表示全部页面）
-              <input value={watermarkPages} onChange={(e) => setWatermarkPages(e.target.value)} className="mt-1 w-full rounded-xl border border-[#dce2de] bg-white px-3 py-2" placeholder="1,3,5 或 1，3，5" />
-            </label>
-          </div>
-          <p className="mt-2 text-xs text-[#65756f]">将以 30° 从左上至右下重复铺满指定页面，使用半透明灰色。生成后整个 PDF 会扁平化为高质量图片页，水印会融合进像素，不能作为独立文字对象删除。</p>
-        </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {[
-            ['merge', '合并 PDF'],
-            ['rotate', '旋转页面'],
-            ['delete', '删除页面'],
-            ['extract', '提取页面'],
-            ['watermark', '添加整页水印'],
-            ['crop', '按边距裁切'],
-          ].map(([action, label]) => (
-            <button
-              key={action}
-              onClick={() =>
-                pdfAction(
-                  action as
-                    | 'merge'
-                    | 'rotate'
-                    | 'delete'
-                    | 'extract'
-                    | 'watermark'
-                    | 'crop',
-                )
-              }
-              disabled={pdfRunning !== null}
-              className="rounded-xl bg-[#eaf5ef] px-4 py-3 text-sm font-medium text-[#167c69] disabled:cursor-wait disabled:opacity-60"
-            >
-              {pdfRunning === action ? '正在处理…' : label}
-            </button>
-          ))}
-        </div>
+
+  const homeView = (
+    <div className="md-view">
+      <div className="md-header mb-8 mt-2">
+        <h2 className="text-[32px] font-normal leading-10 text-m-on-surface">今天想处理什么文档？</h2>
+        <p className="mt-2 text-m-on-surface-variant">所有处理都在本机完成。按 <kbd className="rounded border border-m-outline-variant px-1.5 text-xs">/</kbd> 可以快速搜索工具。</p>
       </div>
-      <div className="mt-4 rounded-xl border border-[#bde1d0] bg-[#edf9f2] px-4 py-3 text-sm text-[#17664f]">
-        {notice}
-      </div>
-    </div>
-  );
-  const filePicker = (
-    <div className="rounded-3xl border border-[#dce2de] bg-white p-6">
-      <input
-        ref={toolPicker}
-        type="file"
-        multiple={active === 'PDF 工具'}
-        accept={active === 'PDF 工具' ? '.pdf,.png,.jpg,.jpeg,.bmp,.tif,.tiff' : '.pdf'}
-        className="hidden"
-        onChange={(e) => {
-          const selected = Array.from(e.target.files || []);
-          if (active === 'PDF 工具' && selected.length > 10) {
-            setToolFiles([]);
-            setNotice('一次最多可选择 10 张图片，请减少后重新选择。');
-            return;
-          }
-          setToolFiles(selected);
-        }}
-      />
-      <button
-        onClick={() => toolPicker.current?.click()}
-        className="flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[#a8c9bc] bg-[#eaf5ef] py-10 text-[#167c69]"
-      >
-        <Upload size={20} />
-        {toolFiles.length
-          ? toolFiles.length === 1
-            ? toolFiles[0].name
-            : `已选择 ${toolFiles.length} 个文件（按此顺序生成）`
-          : active === 'PDF 工具'
-            ? '选择文件或最多 10 张图片'
-            : '选择 PDF 文件'}
-      </button>
-    </div>
-  );
-  const conversionView = (
-    <div className="mx-auto max-w-4xl">
-      <p className="text-xs font-semibold tracking-widest text-[#75827d]">
-        转换中心
-      </p>
-      <h2 className="mt-1 text-2xl font-semibold">本地格式转换</h2>
-      <div className="mt-6">{filePicker}</div>
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {[
-          ['pdf', '图片转 PDF'],
-          ['txt', 'PDF 转 TXT'],
-          ['docx', 'PDF 转 Word'],
-          ['xlsx', 'PDF 转 Excel'],
-          ['images', 'PDF 转图片压缩包'],
-        ].map(([target, label]) => (
-          <button
-            key={target}
-            onClick={() => convert(target)}
-            disabled={converting !== null}
-            className="rounded-xl bg-[#eaf5ef] px-4 py-3 text-sm font-medium text-[#167c69] disabled:cursor-wait disabled:opacity-60"
-          >
-            {converting === target ? '正在生成…' : label}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {tools.map((t) => (
+          <button key={t.id} type="button" onClick={() => go(t.id)} className="md-card group flex flex-col items-start rounded-[24px] bg-m-surface-container-lowest p-5 text-left transition-all hover:-translate-y-0.5 hover:shadow-lg">
+            <span className="grid size-12 place-items-center rounded-2xl bg-m-primary-container text-m-on-primary-container transition-transform group-hover:scale-105"><t.icon size={24} /></span>
+            <span className="mt-4 font-medium text-m-on-surface">{t.label}</span>
+            <span className="mt-1 text-sm leading-5 text-m-on-surface-variant">{t.description}</span>
           </button>
         ))}
       </div>
-      <div className="mt-4 rounded-xl border border-[#bde1d0] bg-[#edf9f2] px-4 py-3 text-sm text-[#17664f]">
-        {notice}
-      </div>
+      {downloads.length > 0 && (
+        <Card className="mt-8" title="最近保存" actions={<Button variant="text" onClick={() => go('downloads')}>全部</Button>}>
+          <ul className="divide-y divide-m-outline-variant">{downloads.slice(0, 5).map((d) => <li key={d.id} className="flex items-center gap-3 py-2 text-sm"><FileDown size={18} className="text-m-primary" /><span className="flex-1 truncate">{d.name}</span><span className="text-xs text-m-on-surface-variant">{d.status}</span></li>)}</ul>
+        </Card>
+      )}
     </div>
   );
-  const securityView = (
-    <div className="mx-auto max-w-4xl">
-      <p className="text-xs font-semibold tracking-widest text-[#75827d]">
-        安全中心
-      </p>
-      <h2 className="mt-1 text-2xl font-semibold">PDF 密码、权限与永久脱敏</h2>
-      <div className="mt-6">{filePicker}</div>
-      <div className="mt-5 grid gap-4 rounded-3xl border border-[#dce2de] bg-white p-6 md:grid-cols-2">
-        <label className="text-sm text-[#65756f]">
-          打开密码
-          <div className="relative mt-2">
-            <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              type={showPassword ? 'text' : 'password'}
-              autoComplete="new-password"
-              className="w-full rounded-xl border border-[#dce2de] px-3 py-2 pr-11"
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword((visible) => !visible)}
-              aria-label={showPassword ? '隐藏打开密码' : '显示打开密码'}
-              title={showPassword ? '隐藏密码' : '显示密码'}
-              className="absolute inset-y-0 right-0 grid w-10 place-items-center text-[#65756f] hover:text-[#167c69]"
-            >
-              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-            </button>
-          </div>
-          <span className="mt-1 block text-xs">至少 12 位，需含大小写字母、数字和符号；可使用中文、表情及常见符号。</span>
-        </label>
-        <label className="text-sm text-[#65756f]">
-          所有者密码
-          <div className="relative mt-2">
-            <input
-              value={ownerPassword}
-              onChange={(e) => setOwnerPassword(e.target.value)}
-              type={showOwnerPassword ? 'text' : 'password'}
-              autoComplete="new-password"
-              className="w-full rounded-xl border border-[#dce2de] px-3 py-2 pr-11"
-            />
-            <button
-              type="button"
-              onClick={() => setShowOwnerPassword((visible) => !visible)}
-              aria-label={showOwnerPassword ? '隐藏所有者密码' : '显示所有者密码'}
-              title={showOwnerPassword ? '隐藏密码' : '显示密码'}
-              className="absolute inset-y-0 right-0 grid w-10 place-items-center text-[#65756f] hover:text-[#167c69]"
-            >
-              {showOwnerPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-            </button>
-          </div>
-          <span className="mt-1 block text-xs">必须与打开密码不同，用于锁定复制、打印和修改权限。</span>
-        </label>
-        <fieldset className="md:col-span-2">
-          <legend className="text-sm text-[#65756f]">使用所有者密码控制的权限（不勾选即禁止）</legend>
-          <div className="mt-2 flex flex-wrap gap-4 text-sm text-[#44554f]">
-            {[
-              ['copy', '允许复制文字和图片'],
-              ['print', '允许打印（含高质量打印）'],
-              ['modify', '允许修改、批注和填写表单'],
-            ].map(([value, label]) => (
-              <label key={value} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={securityPermissions.includes(value)}
-                  onChange={(event) => setSecurityPermissions((current) => event.target.checked ? [...current, value] : current.filter((item) => item !== value))}
-                />
-                {label}
-              </label>
+
+  const downloadsView = (
+    <div className="md-view mx-auto max-w-4xl">
+      <PageHeader title="下载记录" subtitle="桌面版保留最近 200 条成功保存记录，重启后仍可查看。" />
+      <Card>
+        {downloads.length ? (
+          <ul className="divide-y divide-m-outline-variant">
+            {downloads.map((item) => (
+              <li key={item.id} className="flex flex-wrap items-center gap-3 py-3">
+                <FileDown size={20} className="text-m-primary" />
+                <div className="min-w-0 flex-1"><p className="truncate text-sm text-m-on-surface">{item.name}</p><p className="truncate text-xs text-m-on-surface-variant">{item.path || item.status}</p></div>
+                {item.path && <><IconButton icon={ExternalLink} label="打开文件" onClick={() => void openDownload(item.id, false)} /><IconButton icon={FolderOpen} label="打开所在文件夹" onClick={() => void openDownload(item.id, true)} /></>}
+                {item.blob && <Button variant="text" onClick={() => item.blob && void saveBlob(item.blob, item.name)}>重新保存</Button>}
+              </li>
             ))}
-          </div>
-        </fieldset>
-        <label className="text-sm text-[#65756f] md:col-span-2">
-          永久涂黑文字（每行一项）
-          <textarea
-            value={redactText}
-            onChange={(e) => setRedactText(e.target.value)}
-            className="mt-2 h-24 w-full rounded-xl border border-[#dce2de] p-3"
-            placeholder="身份证号\n姓名"
-          />
-        </label>
-      </div>
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <button
-          onClick={() => secure('protect')}
-          className="rounded-xl bg-[#167c69] px-4 py-3 text-sm font-medium text-white"
-        >
-          设置 AES-256 密码
-        </button>
-        <button
-          onClick={() => secure('unlock')}
-          className="rounded-xl bg-[#eaf5ef] px-4 py-3 text-sm font-medium text-[#167c69]"
-        >
-          移除已有密码
-        </button>
-        <button
-          onClick={() => secure('clean-metadata')}
-          className="rounded-xl bg-[#eaf5ef] px-4 py-3 text-sm font-medium text-[#167c69]"
-        >
-          清理元数据
-        </button>
-        <button
-          onClick={() => secure('redact')}
-          className="rounded-xl bg-[#1d2a29] px-4 py-3 text-sm font-medium text-white"
-        >
-          永久涂黑
-        </button>
-      </div>
-      <p className="mt-3 text-sm text-[#65756f]">
-        仅能移除由 PaperDock 加密生成的 PDF，且必须先验证正确的打开密码。成功后会生成一份全新、无打开密码和所有者密码的 PDF。
-      </p>
-      <div className="mt-6 rounded-2xl border border-[#dce2de] bg-white p-5 text-sm text-[#65756f]">
-        <b className="text-[#1d2a29]">安全提示</b>
-        <p className="mt-2">
-          永久涂黑会移除匹配的可搜索文字，操作前请保留原件。密码保护使用 PDF 标准中最高级别的 AES-256
-          加密；请妥善保存两种密码。
-        </p>
-      </div>
-      <div className="mt-4 rounded-xl border border-[#bde1d0] bg-[#edf9f2] px-4 py-3 text-sm text-[#17664f]">
-        {notice}
-      </div>
+          </ul>
+        ) : <Empty icon={Download} title="暂无保存记录">处理完成后会弹出保存位置选择窗口。</Empty>}
+      </Card>
     </div>
   );
+
+  const views: Partial<Record<ViewId, ReactNode>> = {
+    home: homeView, ocr: <OcrView />, tables: <TablesView />, pages: <PagesView />, annotate: <AnnotateView />,
+    forms: <FormsView />, compare: <CompareView />, convert: <ConvertView />, security: <SecurityView />, downloads: downloadsView,
+  };
+
   return (
-    <main className="pd-app min-h-screen bg-[#f5f6f4] text-[#1d2a29]">
-      <div className="mx-auto flex min-h-screen max-w-[1600px]">
-        <aside className="hidden w-60 shrink-0 border-r border-[#dce2de] bg-[#eef2ee] p-5 lg:block">
-          <div className="mb-10 flex items-center gap-3">
-            <div className="grid size-10 place-items-center rounded-xl bg-[#167c69] text-white">
-              <BookOpen size={20} />
-            </div>
-            <div>
-              <b>PaperDock</b>
-              <p className="text-xs text-[#71807b]">个人文档工作台</p>
-            </div>
-          </div>
-          {nav.map(([Icon, name]) => (
-            <button
-              key={name}
-              onClick={() => setActive(name)}
-              className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm ${active === name ? 'bg-white font-semibold text-[#126d5c] shadow-sm' : 'text-[#5d6d68]'}`}
-            >
-              <Icon size={18} />
-              {name}
-            </button>
-          ))}
-          <button onClick={() => setActive('下载记录')} className="mt-12 flex items-center gap-2 text-sm text-[#64746e]">
-            <FileDown size={17} />下载记录（{downloads.length}）
+    <WorkbenchContext.Provider value={workbench}>
+      <main className="pd-app min-h-screen bg-m-surface text-m-on-surface">
+        <header className="md-surface sticky top-0 z-30 flex h-16 items-center gap-2 bg-m-surface px-2 sm:px-4">
+          <IconButton icon={Menu} label="展开或收起导航" onClick={() => setDrawer((open) => !open)} />
+          <button type="button" onClick={() => go('home')} className="flex items-center gap-2 rounded-full px-2 py-1">
+            <span className="grid size-9 place-items-center rounded-xl bg-m-primary text-m-on-primary"><ScanText size={20} /></span>
+            <span className="hidden text-[22px] text-m-on-surface sm:inline">PaperDock</span>
           </button>
-          <div className="mt-3 space-y-3 text-xs" aria-live="polite">
-            {downloads.slice(0, 4).map(item => <div key={item.id} className="break-all"><b>{item.name}</b><p>{item.status}</p>{item.path && <p>{item.path}</p>}</div>)}
-          </div>
-        </aside>
-        <section className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-[76px] items-center justify-between border-b border-[#dce2de] bg-white/80 px-6">
-            <div>
-              <h1 className="text-lg font-semibold">{active}</h1>
-              {active === '智能 OCR' && <p className="text-xs text-[#75827d]">本地工程 · 手动保存校对文字与设置</p>}
-            </div>
-            <div className="flex gap-2"><input ref={projectPicker} type="file" accept=".json" className="hidden" onChange={event => { void openProject(event.target.files?.[0]); event.target.value = ''; }} />
-            {active === '智能 OCR' && <button onClick={() => projectPicker.current?.click()} className="rounded-xl border px-4 py-2 text-sm">打开工程</button>}<button onClick={() => setActive('下载记录')} className="rounded-xl border px-4 py-2 text-sm">下载记录</button>{active === '智能 OCR' && <button
-              onClick={saveProject}
-              disabled={savingProject}
-              className="rounded-xl bg-[#167c69] px-4 py-2 text-sm font-medium text-white"
-            >
-              {savingProject ? '保存中…' : '保存工程'}
-            </button>}</div>
-          </header>
-          <div className="p-6 xl:p-9">
-            <button onClick={() => setActive('外观设置')} className="mb-4 rounded-xl border bg-white px-4 py-2">外观设置</button>
-            <Appearance visible={active === '外观设置'} busy={running || !!taskLabel} save={saveBlob} />
-            <p role="status" className="mb-4 break-all rounded-xl border bg-white p-3 text-sm">{notice}</p>
-            {taskLabel && <div role="status" className="mb-4 rounded-xl border p-3"><p>{taskLabel} · 已用时 {taskSeconds} 秒</p><progress className="my-2 w-full" /><button className="rounded-lg border px-3 py-2" onClick={() => taskAbort.current?.abort()}>取消等待及下载</button><p className="mt-2 text-xs">取消会停止接收结果，不会立即终止已开始的本地计算。</p></div>}
-            {active === '下载记录' ? <div className="space-y-4"><h2 className="text-xl font-semibold">下载与保存记录</h2><p>每次保存可独立选择文件夹。桌面版保留最近 200 条成功保存记录，重启后仍可查看。</p>{!downloads.length && <p>暂无导出文件。处理完成后会弹出保存位置选择窗口。</p>}{downloads.map(item => <div key={item.id} className="rounded-xl border bg-white p-4"><b>{item.name}</b><p>{item.status}</p>{item.path && <p className="break-all">保存位置：{item.path}</p>}{item.path && <><button className="m-2 rounded-lg border p-2" onClick={() => void openDownload(item.id, false)}>打开文件</button><button className="m-2 rounded-lg border p-2" onClick={() => void openDownload(item.id, true)}>打开所在文件夹</button></>}{item.blob && <button className="mt-2 rounded-lg border px-3 py-2" onClick={() => item.blob && void saveBlob(item.blob, item.name)}>另存为 / 重新保存</button>}</div>)}</div> : active === '智能 OCR' ? (
-              ocrView
-            ) : active === 'PDF 工具' ? (
-              <div className="space-y-10">{pdfView}{conversionView}</div>
-            ) : active === '安全与签名' ? (
-              securityView
-            ) : active === '外观设置' ? null : (
-              <div className="rounded-3xl border border-[#dce2de] bg-white p-10">
-                <ShieldCheck className="text-[#167c69]" />
-                <h2 className="mt-4 text-2xl font-semibold">
-                  {active} 正在准备中
-                </h2>
-                <p className="mt-2 text-[#65756f]">
-                  该模块已纳入第二阶段架构；当前可优先使用 OCR、工程保存和 PDF
-                  页面整理。
-                </p>
+          <div className="relative mx-auto w-full max-w-[720px]">
+            <Search size={20} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-m-on-surface-variant" />
+            <input ref={searchBox} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && matches[0]) go(matches[0].id); }}
+              placeholder="搜索工具，例如“拆分”“签名”“表格”" aria-label="搜索工具"
+              className="h-12 w-full rounded-full bg-m-surface-container-high pl-12 pr-12 text-[15px] text-m-on-surface outline-none transition-shadow placeholder:text-m-on-surface-variant focus:bg-m-surface-container-lowest focus:shadow-md" />
+            {query && <IconButton icon={X} label="清除搜索" className="absolute right-1 top-1/2 -translate-y-1/2" onClick={() => setQuery('')} />}
+            {query.trim() && (
+              <div className="absolute inset-x-0 top-14 overflow-hidden rounded-3xl bg-m-surface-container-lowest py-2 shadow-xl">
+                {matches.length ? matches.map((d) => (
+                  <button key={d.id} type="button" onClick={() => go(d.id)} className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-m-on-surface/8">
+                    <d.icon size={20} className="text-m-on-surface-variant" /><span className="text-sm text-m-on-surface">{d.label}</span><span className="truncate text-xs text-m-on-surface-variant">{d.description}</span>
+                  </button>
+                )) : <p className="px-5 py-3 text-sm text-m-on-surface-variant">没有找到相关工具</p>}
               </div>
             )}
           </div>
-        </section>
-      </div>
-    </main>
+          <IconButton icon={Download} label={`下载记录（${downloads.length}）`} onClick={() => go('downloads')} active={view === 'downloads'} />
+          <IconButton icon={Palette} label="外观设置" onClick={() => go('appearance')} active={view === 'appearance'} />
+          {task && <div className="absolute inset-x-0 bottom-0"><LinearProgress /></div>}
+        </header>
+        <div className="flex">
+          <nav className={`md-surface sticky top-16 h-[calc(100vh-4rem)] shrink-0 overflow-y-auto bg-m-surface px-3 pb-6 transition-all ${drawer ? 'w-64' : 'w-0 overflow-hidden px-0'}`} aria-label="主导航">
+            {navItem({ id: 'home', label: '首页', icon: House, description: '', keywords: '' })}
+            <p className="px-4 pb-1 pt-4 text-xs font-medium text-m-on-surface-variant">工具</p>
+            {tools.map((t) => navItem(t))}
+            <div className="my-3 h-px bg-m-outline-variant" />
+            {navItem(extras[0], downloads.length ? <span className="text-xs">{downloads.length}</span> : null)}
+            {navItem(extras[1])}
+          </nav>
+          <section className="min-w-0 flex-1 px-4 pb-24 pt-2 sm:px-8">
+            <Appearance visible={view === 'appearance'} busy={!!task} save={saveBlob} />
+            {views[view]}
+          </section>
+        </div>
+        {(toast || task) && (
+          <div className="fixed bottom-6 left-1/2 z-50 flex w-[min(560px,calc(100vw-32px))] -translate-x-1/2 flex-col gap-2">
+            {task && (
+              <div className="md-snackbar flex items-center gap-3 rounded-xl bg-m-inverse-surface px-4 py-3 text-sm text-m-inverse-on-surface shadow-lg" role="status">
+                <span className="md-spinner shrink-0" /><span className="flex-1">{task} · {seconds} 秒</span>
+                <button type="button" className="font-medium text-m-primary-container" onClick={() => abort.current?.abort()}>取消</button>
+              </div>
+            )}
+            {toast && (
+              <div key={toast.id} className="md-snackbar flex items-start gap-3 rounded-xl bg-m-inverse-surface px-4 py-3 text-sm text-m-inverse-on-surface shadow-lg" role="status" aria-live="polite">
+                <span className="flex-1 break-all leading-6">{toast.text}</span>
+                <button type="button" aria-label="关闭提示" onClick={() => setToast(null)} className="opacity-80 hover:opacity-100"><X size={18} /></button>
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+    </WorkbenchContext.Provider>
   );
 }

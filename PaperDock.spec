@@ -1,21 +1,28 @@
 # -*- mode: python ; coding: utf-8 -*-
+from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.utils.hooks import collect_all
 from PyInstaller.utils.hooks import copy_metadata
 
-datas = [('desktop-dist', 'desktop-dist'), ('runtime-cache/paddlex', 'runtime-cache/paddlex')]
+datas = [('desktop-dist', 'desktop-dist')]
+if Path('runtime-cache/paddlex').is_dir():
+    datas.append(('runtime-cache/paddlex', 'runtime-cache/paddlex'))
 binaries = []
-ffmpeg_bundle = collect_all('imageio_ffmpeg')
-datas += ffmpeg_bundle[0]
-binaries += ffmpeg_bundle[1]
-hiddenimports = ['backend.app']
+hiddenimports = ['backend.app', 'backend.tools']
 datas += copy_metadata('imagesize')
 datas += copy_metadata('pyclipper')
 datas += copy_metadata('pypdfium2')
 datas += copy_metadata('python-bidi')
 datas += copy_metadata('shapely')
+hiddenimports += collect_submodules('odf')
 hiddenimports += collect_submodules('paddlex.inference')
 hiddenimports += collect_submodules('paddleocr')
+tmp_ret = collect_all('pptx')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('pikepdf')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('ebooklib')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('paddle')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('paddleocr')
@@ -35,6 +42,8 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('cv2')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('fitz')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+tmp_ret = collect_all('imageio_ffmpeg')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 

@@ -211,7 +211,11 @@ def launch_desktop() -> None:
             raise RuntimeError('PaperDock 本地服务启动超时，请查看 backend.log。')
         import webview
 
-        window = webview.create_window("PaperDock", "http://127.0.0.1:8001/desktop/", js_api=DesktopApi(), width=1440, height=960, min_size=(1000, 700))
+        # The WebView keeps a persistent HTTP cache. A build stamp in the URL makes
+        # an upgraded installation load its new UI instead of a cached old page.
+        index = APP_ROOT / "desktop-dist" / "index.html"
+        build = int(index.stat().st_mtime) if index.exists() else 0
+        window = webview.create_window("PaperDock", f"http://127.0.0.1:8001/desktop/?build={build}", js_api=DesktopApi(), width=1440, height=960, min_size=(1000, 700))
         window.events.closing += lambda: LOG.info('Window closing requested')
         window.events.closed += lambda: LOG.info('Window closed')
         LOG.info('Starting desktop event loop')

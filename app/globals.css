@@ -48,24 +48,88 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-body { font-family: Arial, "Microsoft YaHei", sans-serif; }
+/* ---------- Material 3 (Google) design tokens ----------
+   Defaults are Google's light baseline; app/m3.ts regenerates them from the
+   accent color (wallpaper or picker) with material-color-utilities. */
+:root {
+  --md-primary: #0b57d0; --md-on-primary: #ffffff;
+  --md-primary-container: #d3e3fd; --md-on-primary-container: #041e49;
+  --md-secondary-container: #c2e7ff; --md-on-secondary-container: #001d35;
+  --md-tertiary-container: #c4eed0; --md-on-tertiary-container: #072711;
+  --md-surface: #f8fafd; --md-surface-dim: #d3dbe5;
+  --md-surface-container-lowest: #ffffff; --md-surface-container-low: #f8fafd;
+  --md-surface-container: #f0f4f9; --md-surface-container-high: #e9eef6; --md-surface-container-highest: #dde3ea;
+  --md-on-surface: #1f1f1f; --md-on-surface-variant: #444746;
+  --md-outline: #747775; --md-outline-variant: #c4c7c5;
+  --md-inverse-surface: #303030; --md-inverse-on-surface: #f2f2f2;
+  --md-error: #b3261e; --md-on-error: #ffffff; --md-error-container: #f9dedc; --md-on-error-container: #410e0b;
+  --pd-radius: 20px;
+}
 
+@theme inline {
+  --color-m-primary: var(--md-primary);
+  --color-m-on-primary: var(--md-on-primary);
+  --color-m-primary-container: var(--md-primary-container);
+  --color-m-on-primary-container: var(--md-on-primary-container);
+  --color-m-secondary-container: var(--md-secondary-container);
+  --color-m-on-secondary-container: var(--md-on-secondary-container);
+  --color-m-tertiary-container: var(--md-tertiary-container);
+  --color-m-on-tertiary-container: var(--md-on-tertiary-container);
+  --color-m-surface: var(--md-surface);
+  --color-m-surface-container-lowest: var(--md-surface-container-lowest);
+  --color-m-surface-container-low: var(--md-surface-container-low);
+  --color-m-surface-container: var(--md-surface-container);
+  --color-m-surface-container-high: var(--md-surface-container-high);
+  --color-m-surface-container-highest: var(--md-surface-container-highest);
+  --color-m-on-surface: var(--md-on-surface);
+  --color-m-on-surface-variant: var(--md-on-surface-variant);
+  --color-m-outline: var(--md-outline);
+  --color-m-outline-variant: var(--md-outline-variant);
+  --color-m-inverse-surface: var(--md-inverse-surface);
+  --color-m-inverse-on-surface: var(--md-inverse-on-surface);
+  --color-m-error: var(--md-error);
+  --color-m-on-error: var(--md-on-error);
+  --color-m-error-container: var(--md-error-container);
+  --color-m-on-error-container: var(--md-on-error-container);
+}
+
+body { font-family: Roboto, "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; background: var(--md-surface); color: var(--md-on-surface); -webkit-font-smoothing: antialiased; }
+
+.md-input { width: 100%; height: 44px; border-radius: 10px; border: 1px solid var(--md-outline); background: var(--md-surface-container-lowest); padding: 0 14px; font-size: 14px; color: var(--md-on-surface); outline: none; transition: border-color .15s, box-shadow .15s; }
+textarea.md-input { height: auto; padding: 12px 14px; line-height: 1.6; }
+.md-input:focus { border-color: var(--md-primary); box-shadow: inset 0 0 0 1px var(--md-primary); }
+.md-spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: md-spin .8s linear infinite; }
+@keyframes md-spin { to { transform: rotate(360deg); } }
+.md-indeterminate { width: 40%; animation: md-slide 1.4s ease-in-out infinite; }
+@keyframes md-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+.md-snackbar { animation: md-rise .2s ease-out; }
+@keyframes md-rise { from { transform: translateY(12px); opacity: 0; } }
+.md-view { animation: md-fade .18s ease-out; }
+@keyframes md-fade { from { opacity: 0; transform: translateY(4px); } }
+
+/* Wallpaper + theme styles from the appearance settings. */
 .pd-app { isolation: isolate; position: relative; }
 .pd-wallpaper { position: fixed; inset: -20px; z-index: -1; pointer-events: none; overflow: hidden; }
 .pd-wallpaper img, .pd-wallpaper video, .pd-wallpaper > div { position: absolute; width: 100%; height: 100%; inset: 0; object-fit: cover; }
-[data-paper-theme] .pd-app button { border-radius: var(--pd-radius); transition: box-shadow .15s, filter .15s; }
-[data-paper-theme] .pd-app button:not(:disabled):hover { box-shadow: 0 2px 12px #0002; }
-[data-paper-theme] .pd-app button:focus-visible { outline: 3px solid var(--pd-accent); outline-offset: 3px; }
-[data-paper-theme] .pd-app button:disabled { opacity: .5; cursor: not-allowed; }
-[data-paper-theme] .pd-app button[class*="bg-[#167c69]"] { background: var(--pd-accent); color: var(--pd-on-accent); }
-[data-paper-theme="outline"] .pd-app button[class*="bg-[#167c69]"] { background: white; color: #1d2a29; border: 2px solid var(--pd-accent); }
-[data-paper-theme="glass"] .pd-app button[class*="bg-[#167c69]"] { background: var(--pd-accent); color: var(--pd-on-accent); border: 1px solid #ffffff80; box-shadow: inset 0 2px 0 #ffffff45, 0 4px 12px #0002; }
-[data-paper-theme] .pd-app .bg-white, [data-paper-theme] .pd-app header, [data-paper-theme] .pd-app aside { background-color: var(--pd-surface); }
-.pd-settings button { padding: .65rem 1rem; border: 1px solid #aab8b3; }
-.pd-settings label { font-size: 16px; }
-.pd-settings select { padding: .5rem; background: white; color: #1d2a29; }
-.pd-settings input[type="color"] { vertical-align: middle; width: 64px; height: 36px; }
-.pd-settings input { accent-color: var(--pd-accent); }
+[data-has-wallpaper] .pd-app { background: transparent; }
+[data-has-wallpaper] .pd-app .md-card, [data-has-wallpaper] .pd-app .md-surface { background-color: color-mix(in srgb, var(--md-surface-container-lowest) var(--pd-opacity, 92%), transparent); }
+/* Page titles get a backing plate on a wallpaper so the gray subtitles stay readable. */
+[data-has-wallpaper] .pd-app .md-header { background-color: color-mix(in srgb, var(--md-surface-container-lowest) var(--pd-opacity, 92%), transparent); border-radius: var(--pd-radius, 24px); padding: 16px 24px; }
+/* No backdrop blur: re-blurring a playing video wallpaper every frame costs GPU time. */
+[data-paper-theme] .pd-app .md-button, [data-paper-theme] .pd-app .md-card { border-radius: var(--pd-radius); }
+[data-paper-theme="outline"] .pd-app .md-filled { background: transparent; color: var(--md-primary); border: 2px solid var(--md-primary); }
+[data-paper-theme="glass"] .pd-app .md-filled { border: 1px solid #ffffff80; box-shadow: inset 0 2px 0 #ffffff45, 0 4px 12px #0002; }
+.pd-app button:focus-visible, .pd-app a:focus-visible { outline: 2px solid var(--md-primary); outline-offset: 2px; }
+.pd-settings button { height: 40px; padding: 0 20px; border-radius: var(--pd-radius, 999px); font-size: 14px; font-weight: 500; }
+.pd-settings button:not(.md-filled) { border: 1px solid var(--md-outline); color: var(--md-primary); }
+.pd-settings button:not(.md-filled):hover:not(:disabled) { background: color-mix(in srgb, var(--md-primary) 8%, transparent); }
+.pd-settings button:disabled { opacity: .4; cursor: not-allowed; }
+.pd-settings h3 { font-size: 16px; font-weight: 500; }
+.pd-settings p, .pd-settings label { font-size: 14px; color: var(--md-on-surface-variant); }
+.pd-settings select { height: 40px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--md-outline); background: var(--md-surface-container-lowest); color: var(--md-on-surface); }
+.pd-settings input[type="color"] { vertical-align: middle; width: 56px; height: 32px; border-radius: 8px; }
+.pd-settings input { accent-color: var(--md-primary); }
+
 
 :root {
   --background: oklch(1 0 0);

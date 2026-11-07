@@ -1,5 +1,5 @@
 #define AppName "PaperDock"
-#define AppVersion "1.0.9"
+#define AppVersion "1.1.1"
 #define AppPublisher "PaperDock"
 #define AppExeName "PaperDock.exe"
 
@@ -36,7 +36,7 @@ UninstallDisplayIcon={app}\{#AppExeName}
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Files]
-Source: "..\desktop-release\PaperDock\*"; DestDir: "{app}"; Excludes: "PaperDockData\runtime-jobs\*"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\desktop-release\PaperDock\*"; DestDir: "{app}"; Excludes: "PaperDockData\*"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\PaperDock"; Filename: "{app}\{#AppExeName}"

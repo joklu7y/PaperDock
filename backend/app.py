@@ -72,7 +72,17 @@ async def prioritize_documents(request, call_next):
     if request.method == 'POST' and not request.url.path.startswith('/wallpaper/'):
         cancel_for_document()
     return await call_next(request)
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"], allow_methods=["*"], allow_headers=["*"], expose_headers=["Content-Disposition", "X-PaperDock-Conversion-Mode"])
+
+@app.middleware('http')
+async def revalidate_desktop_page(request, call_next):
+    # Hashed files under /desktop/assets/ may be cached; the page itself must be
+    # revalidated so an upgraded installation never shows the previous UI.
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith('/desktop') and not path.startswith('/desktop/assets/'):
+        response.headers['Cache-Control'] = 'no-cache'
+    return response
+app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"], allow_methods=["*"], allow_headers=["*"], expose_headers=["Content-Disposition", "X-PaperDock-Conversion-Mode", "X-PaperDock-Tables", "X-PaperDock-Added", "X-PaperDock-Filled", "X-PaperDock-Repair"])
 _engines: dict[str, Any] = {}
 
 def engine(language: str):
@@ -136,15 +146,15 @@ def preprocess(image_path: Path) -> Path:
     cv2.imencode(".png", image)[1].tofile(str(output))
     return output
 
+def render_pdf_page(page: fitz.Page, folder: Path, number: int) -> Path:
+    output = folder / f"page-{number}.png"
+    page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False).save(str(output))
+    return output
+
+
 def pdf_to_images(source: Path, folder: Path) -> list[Path]:
-    pages: list[Path] = []
     with fitz.open(source) as pdf:
-        for index, page in enumerate(pdf):
-            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
-            out = folder / f"page-{index + 1}.png"
-            pix.save(str(out))
-            pages.append(out)
-    return pages
+        return [render_pdf_page(page, folder, number) for number, page in enumerate(pdf, 1)]
 
 def read_result(result: Any) -> list[dict[str, Any]]:
     """Normalize PaddleOCR 3 result formats without depending on private objects."""
@@ -221,17 +231,40 @@ def text_encoding_is_unreliable(text: str) -> bool:
     broken = sum(char in {"□", "\ufffd"} for char in visible)
     return broken >= 3 and broken / len(visible) >= 0.01
 
+def ocr_image_lines(image_path: Path) -> list[str]:
+    cleaned = preprocess(image_path)
+    return [line["text"] for item in engine("ch").predict(str(cleaned)) for line in read_result(item)]
+
+
 def ocr_pdf_text(source: Path, job: Path) -> str:
     """OCR rendered PDF pages when its embedded text encoding is unusable."""
     pages = pdf_to_images(source, job)
     lines: list[str] = []
     for page_no, image_path in enumerate(pages, 1):
-        cleaned = preprocess(image_path)
-        for item in engine("ch").predict(str(cleaned)):
-            lines.extend(line["text"] for line in read_result(item))
+        lines.extend(ocr_image_lines(image_path))
         if page_no < len(pages):
             lines.append("")
     return "\n".join(lines).strip()
+
+
+def pdf_text_for_export(source: Path, job: Path) -> str:
+    """Keep native text and recognize pages whose text layer is unusable."""
+    pages: list[str] = []
+    with fitz.open(source) as pdf:
+        for number, page in enumerate(pdf, 1):
+            text = page.get_text()
+            if text_encoding_is_unreliable(text):
+                try:
+                    image = render_pdf_page(page, job, number)
+                    text = "\n".join(ocr_image_lines(image))
+                except RuntimeError as error:
+                    raise HTTPException(503, f"PDF 第 {number} 页文字识别失败：{error}") from error
+            pages.append(text)
+    text = "\n\n".join(pages)
+    if text_encoding_is_unreliable(text):
+        raise HTTPException(422, "PDF 中未提取到可用文字，请检查页面内容和扫描清晰度。")
+    return text
+
 
 def write_pdf_word(source: Path, job: Path) -> tuple[Path, str]:
     """Export editable text when possible; never put corrupted PDF glyphs in Word."""
@@ -601,17 +634,18 @@ async def convert_file(files: list[UploadFile] = File(...), target: str = Form(.
             image.close()
     elif len(files) != 1:
         raise HTTPException(400, "除图片转 PDF 外，其他转换每次只能选择一个文件")
-    elif suffix == ".pdf" and target == "txt":
-        with fitz.open(source) as pdf: text = "\n\n".join(page.get_text() for page in pdf)
-        output = job / "converted.txt"; output.write_text(text, encoding="utf-8")
+    elif suffix == ".pdf" and target in {"txt", "xlsx"}:
+        text = pdf_text_for_export(source, job)
+        if target == "txt":
+            output = job / "converted.txt"
+            output.write_text(text, encoding="utf-8")
+        else:
+            output = job / write_exports(job, text)["xlsx"]
     elif suffix == ".pdf" and target == "docx":
         output, mode = write_pdf_word(source, job)
         response = FileResponse(output, filename=output.name)
         response.headers["X-PaperDock-Conversion-Mode"] = mode
         return response
-    elif suffix == ".pdf" and target == "xlsx":
-        with fitz.open(source) as pdf: text = "\n\n".join(page.get_text() for page in pdf)
-        exports = write_exports(job, text); output = job / exports[target]
     elif suffix == ".pdf" and target == "images":
         archive = job / "pages.zip"
         with fitz.open(source) as pdf, zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as bundle:
@@ -727,6 +761,11 @@ async def security_pdf(operation: str, file: UploadFile = File(...), password: s
     else:
         document.close(); raise HTTPException(404, "未知安全操作")
     document.close(); return FileResponse(output, filename=output.name)
+
+# Layout, tables, annotations, forms, compare and other tools reuse the OCR
+# helpers defined above, so they are imported only after them.
+from backend.tools import router as tools_router
+app.include_router(tools_router)
 
 # Registered last so API routes above keep their normal paths. The desktop
 # wrapper loads this same built UI at /desktop/ without Node or a browser.
