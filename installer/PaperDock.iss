@@ -1,5 +1,5 @@
 #define AppName "PaperDock"
-#define AppVersion "1.1.1"
+#define AppVersion "1.1.2"
 #define AppPublisher "PaperDock"
 #define AppExeName "PaperDock.exe"
 

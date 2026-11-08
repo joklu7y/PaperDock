@@ -103,11 +103,10 @@ def tidy_ocr(text: str) -> str:
 
 def ocr_image(path: Path, language: str) -> tuple[list[dict[str, Any]], np.ndarray]:
     """OCR an image after the standard cleanup; boxes refer to the cleaned image."""
-    cleaned = preprocess(path)
-    image = cv2.imdecode(np.fromfile(str(cleaned), dtype=np.uint8), cv2.IMREAD_COLOR)
+    image = preprocess(path)
     lines: list[dict[str, Any]] = []
     try:
-        for item in engine(language).predict(str(cleaned)):
+        for item in engine(language).predict(image):
             lines.extend(read_result(item))
     except RuntimeError as error:
         raise HTTPException(503, str(error)) from error

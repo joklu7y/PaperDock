@@ -46,7 +46,10 @@ PROJECTS.mkdir(exist_ok=True)
 # folder access. Keep both model files and temporary download data within the
 # PaperDock workspace. BOS is Paddle's own model host and avoids the default
 # Hugging Face connectivity probe on otherwise healthy networks.
-os.environ["PADDLE_PDX_CACHE_HOME"] = str(PADDLE_CACHE)
+cache_for_engine = PADDLE_CACHE
+if os.name == "nt" and not str(PADDLE_CACHE).isascii() and ROOT == Path.cwd().resolve():
+    cache_for_engine = PADDLE_CACHE.relative_to(ROOT)
+os.environ["PADDLE_PDX_CACHE_HOME"] = str(cache_for_engine)
 os.environ["PADDLE_PDX_MODEL_SOURCE"] = "bos"
 os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "true"
 # oneDNN + the new PIR executor trigger an unsupported CPU attribute on this
@@ -113,7 +116,7 @@ def engine(language: str):
             raise RuntimeError(f"OCR 模型初始化失败：{detail}。模型缓存位置：{PADDLE_CACHE}") from error
     return _engines[lang]
 
-def preprocess(image_path: Path) -> Path:
+def preprocess(image_path: Path) -> np.ndarray:
     image = cv2.imdecode(np.fromfile(str(image_path), dtype=np.uint8), cv2.IMREAD_COLOR)
     if image is None:
         raise ValueError("无法读取图片")
@@ -141,10 +144,7 @@ def preprocess(image_path: Path) -> Path:
     lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
     lightness, channel_a, channel_b = cv2.split(lab)
     lightness = cv2.createCLAHE(clipLimit=1.6, tileGridSize=(8, 8)).apply(lightness)
-    image = cv2.cvtColor(cv2.merge((lightness, channel_a, channel_b)), cv2.COLOR_LAB2BGR)
-    output = image_path.with_name(f"clean-{image_path.stem}.png")
-    cv2.imencode(".png", image)[1].tofile(str(output))
-    return output
+    return cv2.cvtColor(cv2.merge((lightness, channel_a, channel_b)), cv2.COLOR_LAB2BGR)
 
 def render_pdf_page(page: fitz.Page, folder: Path, number: int) -> Path:
     output = folder / f"page-{number}.png"
@@ -232,8 +232,8 @@ def text_encoding_is_unreliable(text: str) -> bool:
     return broken >= 3 and broken / len(visible) >= 0.01
 
 def ocr_image_lines(image_path: Path) -> list[str]:
-    cleaned = preprocess(image_path)
-    return [line["text"] for item in engine("ch").predict(str(cleaned)) for line in read_result(item)]
+    image = preprocess(image_path)
+    return [line["text"] for item in engine("ch").predict(image) for line in read_result(item)]
 
 
 def ocr_pdf_text(source: Path, job: Path) -> str:
@@ -321,8 +321,8 @@ def process_file(file: UploadFile, language: str) -> dict[str, Any]:
         pages = pdf_to_images(source, job) if suffix == ".pdf" else [source]
         all_lines: list[dict[str, Any]] = []
         for page_no, page in enumerate(pages, 1):
-            cleaned = preprocess(page)
-            for item in engine(language).predict(str(cleaned)):
+            image = preprocess(page)
+            for item in engine(language).predict(image):
                 for line in read_result(item): line["page"] = page_no; all_lines.append(line)
     except RuntimeError as error:
         shutil.rmtree(job, ignore_errors=True)

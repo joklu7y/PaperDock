@@ -155,6 +155,9 @@ def configure_environment() -> None:
 
 def run_backend() -> None:
     configure_environment()
+    if os.name == "nt" and not str(DATA_ROOT.resolve()).isascii():
+        # Paddle's Windows runtime can open relative model paths in this directory.
+        os.chdir(DATA_ROOT)
     import uvicorn
 
     # In a PyInstaller --windowed build, sys.stderr can be None. Uvicorn's

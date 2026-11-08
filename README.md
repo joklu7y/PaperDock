@@ -11,6 +11,10 @@ PaperDock 是 Windows 上的本地文档工具，可以整理 PDF、识别图片
 
 手写公式、图表和复杂版面可能识别不完整，导出后请核对。Excel 的逐行文字与表格识别是不同入口。
 
+## 手机预览版
+
+[安卓](https://github.com/joklu7y/PaperDock/tree/mobile/previews/mobile/android)和 [iOS](https://github.com/joklu7y/PaperDock/tree/mobile/previews/mobile/ios)的独立工程支持本地文字识别、TXT 导出和图片转 PDF。构建方式和测试范围见各自说明。
+
 ## 从源码运行
 
 使用 Windows、64 位 Python 3.11 和 Node.js 22.13 或更新版本。在项目根目录的 PowerShell 中运行。
