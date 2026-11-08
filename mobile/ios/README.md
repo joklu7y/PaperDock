@@ -9,4 +9,6 @@ xcodebuild -project PaperDockMobile.xcodeproj -target PaperDockMobile \
   -sdk iphonesimulator -configuration Debug CODE_SIGNING_ALLOWED=NO build
 ```
 
+在 Xcode 选择 `PaperDockMobile` 方案和 iPhone 模拟器后，使用 Product → Test。测试在本机生成印刷体样张，检查图片识别、文字版 PDF 提取，以及两张图片合成 PDF 后的逐页识别。
+
 真机安装需要在 Xcode 选择开发团队和签名，分发还需要相应的 Apple 发布流程。本文目录提供预览源码。编译和真机结论以实际测试记录为准。
