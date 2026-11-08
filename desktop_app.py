@@ -154,6 +154,11 @@ def configure_environment() -> None:
 
 
 def run_backend() -> None:
+    # PaddleX writes model download progress even in the windowed executable.
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w", encoding="utf-8")
     configure_environment()
     if os.name == "nt" and not str(DATA_ROOT.resolve()).isascii():
         # Paddle's Windows runtime can open relative model paths in this directory.
