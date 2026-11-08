@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import SignaturePad from 'signature_pad';
 import { ChevronLeft, ChevronRight, Circle, Download, Eraser, Highlighter, MessageSquare, PenLine, PenTool, Search, Signature, Square, Strikethrough, Trash2, Underline, Undo2 } from 'lucide-react';
 import { formOf, readError, renderPages, useWorkbench, type RenderedPage } from '../api';
+import { mobileWorkbench } from '../platform';
 import { Button, Card, Chip, Dialog, DropZone, Empty, Field, IconButton, PageHeader, Select, Switch } from '../ui';
 
 type Tool = 'highlight' | 'underline' | 'strike' | 'rect' | 'circle' | 'note' | 'ink' | 'sign';
@@ -237,7 +238,7 @@ export default function AnnotateView() {
         <Button variant="filled" onClick={() => { if (!pad.current || pad.current.isEmpty()) return notify('请先在框内写下签名。'); setSignature(pad.current.toDataURL('image/png')); setTool('sign'); setSignOpen(false); notify('签名已就绪：在页面上拖出放置区域。'); }}>使用此签名</Button>
       </>}>
         <canvas ref={padCanvas} className="h-48 w-full touch-none rounded-2xl border border-m-outline-variant bg-white" />
-        <p className="mt-2 text-xs text-m-on-surface-variant">用鼠标或触控笔书写。这是电子手写签名图片，不是数字证书签名。</p>
+        <p className="mt-2 text-xs text-m-on-surface-variant">{mobileWorkbench ? '用手指或触控笔书写，签名以图片形式写入 PDF。' : '用鼠标或触控笔书写。这是电子手写签名图片，不是数字证书签名。'}</p>
       </Dialog>
     </div>
   );

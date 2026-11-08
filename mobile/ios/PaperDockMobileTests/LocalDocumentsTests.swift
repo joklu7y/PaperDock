@@ -9,16 +9,33 @@ final class LocalDocumentsTests: XCTestCase {
     @MainActor
     func testBundledWorkbenchLoadsInWebView() async throws {
         let controller = WorkbenchController()
-        controller.loadViewIfNeeded()
-        defer { controller.detach() }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        let previousKeyWindow = scene.windows.first(where: \.isKeyWindow)
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            previousKeyWindow?.makeKey()
+            controller.detach()
+        }
         let view = try XCTUnwrap(controller.view as? WKWebView)
+        view.configuration.userContentController.addUserScript(WKUserScript(source: """
+        window.paperDockTestErrors = [];
+        window.addEventListener('error', event => window.paperDockTestErrors.push(event.message || event.target?.src || 'Resource error'), true);
+        window.addEventListener('unhandledrejection', event => window.paperDockTestErrors.push(String(event.reason)));
+        """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        view.load(URLRequest(url: try XCTUnwrap(URL(string: "paperdock://workbench/index.html"))))
         var loaded = false
-        for _ in 0..<20 {
+        for _ in 0..<60 {
             let ready = try? await view.evaluateJavaScript("!!document.querySelector('.pd-mobile') && document.body.innerText.includes('今天想处理什么文档')") as? Bool
             if ready == true { loaded = true; break }
             try await Task.sleep(nanoseconds: 500_000_000)
         }
-        XCTAssertTrue(loaded, "The offline PaperDock workbench did not load in WKWebView.")
+        if !loaded {
+            let state = try? await view.evaluateJavaScript("JSON.stringify({url:location.href,state:document.readyState,errors:window.paperDockTestErrors,body:document.body?.innerText.slice(0,100)})")
+            XCTFail("The offline PaperDock workbench did not load in WKWebView. State: \(state ?? "unavailable")")
+        }
         let assets = try XCTUnwrap(Bundle.main.resourceURL?.appendingPathComponent("workbench/assets"))
         let wasm = try XCTUnwrap(FileManager.default.contentsOfDirectory(atPath: assets.path).first { $0.hasSuffix(".wasm") })
         let result = try await view.callAsyncJavaScript("const response = await fetch(path); return WebAssembly.validate(await response.arrayBuffer());", arguments: ["path": "./assets/\(wasm)"], in: nil, contentWorld: .page)

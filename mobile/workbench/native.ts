@@ -59,6 +59,19 @@ export type LocatedText = { text: string; box: [number, number, number, number] 
 
 export async function recognizeOnPhone(file: Blob, name: string, language: string, locations = false) {
   if (file.size > 50 * 1024 * 1024) throw new Error('手机端单个文件最大支持 50 MB。');
+  if (/\.tiff?$/i.test(name) && window.PaperDockAndroid) {
+    // Android's system image decoder does not guarantee TIFF support.
+    const { Image } = await import('mupdf');
+    const image = new Image(new Uint8Array(await file.arrayBuffer()));
+    try {
+      if (image.getWidth() * image.getHeight() > 24_000_000) throw new Error('TIFF 尺寸过大，请先缩小图片。');
+      const pixels = image.toPixmap();
+      try {
+        file = new Blob([Uint8Array.from(pixels.asPNG())], { type: 'image/png' });
+        name = name.replace(/\.tiff?$/i, '.png');
+      } finally { pixels.destroy(); }
+    } finally { image.destroy(); }
+  }
   return nativeRequest<{ text: string; pages: number; locations?: LocatedText[] }>('ocr', { name, language, locations, data: await encodeFile(file) });
 }
 

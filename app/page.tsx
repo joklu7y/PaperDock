@@ -196,7 +196,7 @@ export default function Home() {
 
   const downloadsView = (
     <div className="md-view mx-auto max-w-4xl">
-      <PageHeader title="下载记录" subtitle="桌面版保留最近 200 条成功保存记录，重启后仍可查看。" />
+      <PageHeader title="下载记录" subtitle={mobileWorkbench ? '最近 200 条成功保存记录可在重启后查看。' : '桌面版保留最近 200 条成功保存记录，重启后仍可查看。'} />
       <Card>
         {downloads.length ? (
           <ul className="divide-y divide-m-outline-variant">

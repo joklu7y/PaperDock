@@ -178,9 +178,9 @@ export default function OcrView() {
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="space-y-6">
           <Card>
-            <DropZone files={[]} onFiles={addFiles} accept={OCR_TYPES} multiple label="拖入或点击选择 PDF / 图片" hint={`支持 PDF、JPG、PNG、BMP、TIF；也可以直接 Ctrl+V 粘贴截图。队列最多 ${LIMIT} 个。`} />
+            <DropZone files={[]} onFiles={addFiles} accept={OCR_TYPES} multiple label={mobileWorkbench ? '选择 PDF 或图片' : '拖入或点击选择 PDF / 图片'} hint={`支持 PDF、JPG、PNG、BMP、TIF。${mobileWorkbench ? '' : '也可以直接 Ctrl+V 粘贴截图。'}队列最多 ${LIMIT} 个。`} />
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              <Button variant="outlined" icon={Camera} onClick={() => void snip()} disabled={running}>截图识别</Button>
+              <Button variant="outlined" icon={Camera} onClick={() => void snip()} disabled={running}>{mobileWorkbench ? '导入截图' : '截图识别'}</Button>
               <span className="ml-auto text-sm text-m-on-surface-variant">{queue.length}/{LIMIT} 个文件</span>
               {queue.length > 0 && <Button variant="text" icon={Trash2} disabled={running} onClick={() => setQueue([])}>清空</Button>}
             </div>
