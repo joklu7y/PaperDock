@@ -19,6 +19,19 @@ kotlin {
     }
 }
 
+tasks.named('preBuild') {
+    doFirst {
+        ['det', 'rec'].each { part ->
+            def modelDir = file("src/main/assets/models/${part}")
+            def config = new File(modelDir, 'inference.yml')
+            if (!new File(modelDir, 'inference.onnx').isFile() || !config.isFile() ||
+                !config.getText('UTF-8').contains("model_name: PP-OCRv6_small_${part}")) {
+                throw new GradleException('Run mobile/android/prepare_models.py to prepare PP-OCRv6 Small.')
+            }
+        }
+    }
+}
+
 dependencies {
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.21.1'
     implementation 'org.opencv:opencv:4.12.0'
