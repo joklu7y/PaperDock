@@ -76,7 +76,7 @@ private struct WorkbenchView: View {
             defer { busy = false }
             do {
                 let text = try await Task.detached(priority: .userInitiated) {
-                    try LocalDocuments.recognize(selection)
+                    try await LocalDocuments.recognize(selection)
                 }.value
                 recognizedText = text
                 message = text.isEmpty ? "没有识别到文字，请检查图片清晰度。" : "识别完成，可以校对并保存 TXT。"

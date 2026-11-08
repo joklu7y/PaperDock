@@ -5,6 +5,7 @@ on:
     branches: [main, mobile/ios-preview, mobile/previews, mobile/full-workbench]
     paths:
       - 'mobile/ios/**'
+      - 'mobile/android/prepare_models.py'
       - 'mobile/workbench/**'
       - 'app/**'
       - 'desktop/**'
@@ -20,7 +21,7 @@ permissions:
 jobs:
   simulator:
     runs-on: macos-15
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -30,6 +31,10 @@ jobs:
           node-version: '24'
       - name: Build the shared workbench
         run: npm ci && npm run build:mobile
+      - name: Prepare the offline OCR models
+        run: |
+          python3 mobile/android/prepare_models.py --cache "$RUNNER_TEMP/models" \
+            --assets mobile/ios/PaperDockMobile/Models
       - name: Run document tests on an iPhone simulator
         working-directory: mobile/ios
         run: |
@@ -46,3 +51,8 @@ jobs:
           ')
           xcodebuild -project PaperDockMobile.xcodeproj -scheme PaperDockMobile \
             -destination "id=$device_id" -parallel-testing-enabled NO test
+      - name: Build the unsigned iPhone app
+        working-directory: mobile/ios
+        run: |
+          xcodebuild -project PaperDockMobile.xcodeproj -scheme PaperDockMobile \
+            -destination 'generic/platform=iOS' -configuration Release CODE_SIGNING_ALLOWED=NO build

@@ -42,8 +42,8 @@ final class LocalDocumentsTests: XCTestCase {
         XCTAssertEqual(result as? Bool, true, "The offline PDF engine must be readable inside WKWebView.")
     }
 
-    func testSearchablePDFUsesTextLayer() throws {
-        try withFixtureDirectory { directory in
+    func testSearchablePDFUsesTextLayer() async throws {
+        try await withFixtureDirectory { directory in
             let pdf = directory.appendingPathComponent("searchable.pdf")
             let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 595, height: 842))
             try renderer.writePDF(to: pdf) { context in
@@ -52,12 +52,15 @@ final class LocalDocumentsTests: XCTestCase {
                     .font: UIFont.systemFont(ofSize: 26),
                 ])
             }
-            XCTAssertEqual(try LocalDocuments.recognize([pdf]), "第 1 页\nPaperDock searchable 2026")
+            let text = try await LocalDocuments.recognize([pdf])
+            XCTAssertEqual(text, "第 1 页\nPaperDock searchable 2026")
         }
     }
 
-    func testImageAndScannedPDFRecognition() throws {
-        try withFixtureDirectory { directory in
+    func testImageAndScannedPDFRecognition() async throws {
+        XCTAssertEqual(try ModelConfig.detection().name, "PP-OCRv6_small_det")
+        XCTAssertEqual(try ModelConfig.recognition().name, "PP-OCRv6_small_rec")
+        try await withFixtureDirectory { directory in
             let photo = directory.appendingPathComponent("printed.png")
             let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1000, height: 320))
             let image = renderer.image { context in
@@ -76,18 +79,20 @@ final class LocalDocumentsTests: XCTestCase {
             let scan = directory.appendingPathComponent("scan.pdf")
             try data.write(to: scan)
 
-            let imageText = try LocalDocuments.recognize([photo])
+            let lines = try await LocalDocuments.imageLocations(photo)
+            let imageText = lines.map(\.text).joined(separator: "\n")
             XCTAssertTrue(imageText.contains("2026"), "Image OCR returned: \(imageText)")
             XCTAssertTrue(imageText.contains("文字"), "Image OCR returned: \(imageText)")
-            let scanText = try LocalDocuments.recognize([scan])
+            XCTAssertTrue(lines.allSatisfy { $0.box.count == 4 && $0.box.allSatisfy { (0...1).contains($0) } })
+            let scanText = try await LocalDocuments.recognize([scan])
             XCTAssertEqual(scanText.components(separatedBy: "2026").count - 1, 2, "Scan OCR returned: \(scanText)")
         }
     }
 
-    private func withFixtureDirectory(_ body: (URL) throws -> Void) throws {
+    private func withFixtureDirectory(_ body: (URL) async throws -> Void) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: directory) }
-        try body(directory)
+        try await body(directory)
     }
 }

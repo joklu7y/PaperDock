@@ -3,7 +3,6 @@ import Foundation
 import ImageIO
 import PDFKit
 import UIKit
-import Vision
 
 enum LocalDocuments {
     struct LocatedText: Sendable {
@@ -11,8 +10,13 @@ enum LocalDocuments {
         let box: [Double]
     }
 
-    static func imageLocations(_ url: URL, language: String) throws -> [LocatedText] {
-        try withAccess(url) { try recognizeLocations(image(at: url), language: language) }
+    private static let ocrEngine = Task.detached(priority: .userInitiated) {
+        try OCREngine(sessionManager: ORTSessionManager())
+    }
+
+    static func imageLocations(_ url: URL) async throws -> [LocatedText] {
+        let bitmap = try withAccess(url) { try image(at: url) }
+        return try await recognizeLocations(bitmap)
     }
     static func isPDF(_ url: URL) -> Bool { url.pathExtension.lowercased() == "pdf" }
 
@@ -23,39 +27,41 @@ enum LocalDocuments {
 
     static func pageCount(_ url: URL) -> Int { isPDF(url) ? PDFDocument(url: url)?.pageCount ?? 1 : 1 }
 
-    static func recognize(_ urls: [URL], language: String = "ch") throws -> String {
+    static func recognize(_ urls: [URL]) async throws -> String {
         try validate(urls)
         if let url = urls.first, isPDF(url) {
-            return try withAccess(url) {
-                let fileSize = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-                guard fileSize <= 50 * 1024 * 1024 else { throw Issue("预览版支持 50 MB 以内的 PDF。") }
-                guard let pdf = PDFDocument(url: url), !pdf.isLocked else { throw Issue("无法打开 PDF，或文件需要密码。") }
-                guard (1...20).contains(pdf.pageCount) else { throw Issue("预览版一次最多识别 20 页 PDF。") }
-                return try (0..<pdf.pageCount).compactMap { index -> String? in
-                    try autoreleasepool {
-                        guard let page = pdf.page(at: index) else { throw Issue("无法读取第 \(index + 1) 页。") }
-                        let native = page.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                        let text: String
-                        if native.isEmpty {
-                            let bounds = page.bounds(for: .mediaBox)
-                            let factor = 1800 / max(bounds.width, bounds.height, 1)
-                            let size = CGSize(width: max(1, bounds.width * factor), height: max(1, bounds.height * factor))
-                            guard let image = page.thumbnail(of: size, for: .mediaBox).cgImage else { throw Issue("无法渲染第 \(index + 1) 页。") }
-                            text = try recognizeImage(image, language: language)
-                        } else {
-                            text = native
-                        }
-                        return text.isEmpty ? nil : "第 \(index + 1) 页\n\(text)"
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+            let fileSize = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            guard fileSize <= 50 * 1024 * 1024 else { throw Issue("预览版支持 50 MB 以内的 PDF。") }
+            guard let pdf = PDFDocument(url: url), !pdf.isLocked else { throw Issue("无法打开 PDF，或文件需要密码。") }
+            guard (1...20).contains(pdf.pageCount) else { throw Issue("预览版一次最多识别 20 页 PDF。") }
+            var sections: [String] = []
+            for index in 0..<pdf.pageCount {
+                try Task.checkCancellation()
+                guard let page = pdf.page(at: index) else { throw Issue("无法读取第 \(index + 1) 页。") }
+                var text = page.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if text.isEmpty {
+                    let bitmap = try autoreleasepool {
+                        let bounds = page.bounds(for: .mediaBox)
+                        let factor = 1800 / max(bounds.width, bounds.height, 1)
+                        let size = CGSize(width: max(1, bounds.width * factor), height: max(1, bounds.height * factor))
+                        guard let image = page.thumbnail(of: size, for: .mediaBox).cgImage else { throw Issue("无法渲染第 \(index + 1) 页。") }
+                        return image
                     }
-                }.joined(separator: "\n\n")
+                    text = try await recognizeLocations(bitmap).map(\.text).joined(separator: "\n")
+                }
+                if !text.isEmpty { sections.append("第 \(index + 1) 页\n\(text)") }
             }
+            return sections.joined(separator: "\n\n")
         }
-        return try urls.compactMap { url -> String? in
-            try autoreleasepool {
-                let text = try withAccess(url) { try recognizeImage(image(at: url), language: language) }
-                return text.isEmpty ? nil : text
-            }
-        }.joined(separator: "\n\n")
+        var sections: [String] = []
+        for url in urls {
+            try Task.checkCancellation()
+            let text = try await imageLocations(url).map(\.text).joined(separator: "\n")
+            if !text.isEmpty { sections.append(text) }
+        }
+        return sections.joined(separator: "\n\n")
     }
 
     static func imagesToPDF(_ urls: [URL]) throws -> Data {
@@ -89,22 +95,17 @@ enum LocalDocuments {
         return data
     }
 
-    private static func recognizeImage(_ image: CGImage, language: String) throws -> String {
-        try recognizeLocations(image, language: language).map(\.text).joined(separator: "\n")
-    }
-
-    private static func recognizeLocations(_ image: CGImage, language: String) throws -> [LocatedText] {
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        let supported = try request.supportedRecognitionLanguages()
-        let wanted = (language == "en" ? ["en-US"] : ["zh-Hans", "en-US"]).filter { supported.contains($0) }
-        if !wanted.isEmpty { request.recognitionLanguages = wanted }
-        request.usesLanguageCorrection = true
-        try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
-        return (request.results ?? []).compactMap { observation in
-            guard let text = observation.topCandidates(1).first?.string else { return nil }
-            let box = observation.boundingBox
-            return LocatedText(text: text, box: [Double(box.minX), Double(1 - box.maxY), Double(box.maxX), Double(1 - box.minY)])
+    private static func recognizeLocations(_ image: CGImage) async throws -> [LocatedText] {
+        let engine = try await ocrEngine.value
+        let run = try await engine.run(image)
+        let width = Double(image.width), height = Double(image.height)
+        return run.results.compactMap { line in
+            let text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            let xs = line.polygon.compactMap { $0.first }
+            let ys = line.polygon.compactMap { $0.dropFirst().first }
+            guard let left = xs.min(), let right = xs.max(), let top = ys.min(), let bottom = ys.max() else { return nil }
+            return LocatedText(text: text, box: [Double(left) / width, Double(top) / height, Double(right) / width, Double(bottom) / height])
         }
     }
 

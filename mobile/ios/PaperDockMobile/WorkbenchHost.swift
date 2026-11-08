@@ -68,7 +68,6 @@ final class WorkbenchController: UIViewController, WKNavigationDelegate, WKScrip
         switch action {
         case "ocr":
             guard let name = fields["name"] as? String, let encoded = fields["data"] as? String else { return fail(id, "无法读取文件。") }
-            let language = fields["language"] as? String ?? "ch"
             let locations = fields["locations"] as? Bool ?? false
             Task { @MainActor in
                 do {
@@ -76,10 +75,10 @@ final class WorkbenchController: UIViewController, WKNavigationDelegate, WKScrip
                         let local = try Self.temporaryFile(name: name, encoded: encoded)
                         defer { try? FileManager.default.removeItem(at: local.deletingLastPathComponent()) }
                         if locations && !LocalDocuments.isPDF(local) {
-                            let lines = try LocalDocuments.imageLocations(local, language: language)
+                            let lines = try await LocalDocuments.imageLocations(local)
                             return (lines.map(\.text).joined(separator: "\n"), 1, lines)
                         }
-                        let text = try LocalDocuments.recognize([local], language: language)
+                        let text = try await LocalDocuments.recognize([local])
                         let pages = LocalDocuments.pageCount(local)
                         return (text, pages, nil)
                     }.value
