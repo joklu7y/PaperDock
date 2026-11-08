@@ -35,6 +35,14 @@ jobs:
         run: |
           python3 mobile/android/prepare_models.py --cache "$RUNNER_TEMP/models" \
             --assets mobile/ios/PaperDockMobile/Models
+      - name: Resolve Swift packages before building
+        working-directory: mobile/ios
+        run: |
+          resolve_packages() {
+            xcodebuild -resolvePackageDependencies -project PaperDockMobile.xcodeproj \
+              -scheme PaperDockMobile -clonedSourcePackagesDirPath "$RUNNER_TEMP/PaperDockPackages"
+          }
+          resolve_packages || resolve_packages
       - name: Run document tests on an iPhone simulator
         working-directory: mobile/ios
         run: |
@@ -50,9 +58,11 @@ jobs:
           sys.exit("No iPhone simulator available")
           ')
           xcodebuild -project PaperDockMobile.xcodeproj -scheme PaperDockMobile \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/PaperDockPackages" -disableAutomaticPackageResolution \
             -destination "id=$device_id" -parallel-testing-enabled NO test
       - name: Build the unsigned iPhone app
         working-directory: mobile/ios
         run: |
           xcodebuild -project PaperDockMobile.xcodeproj -scheme PaperDockMobile \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/PaperDockPackages" -disableAutomaticPackageResolution \
             -destination 'generic/platform=iOS' -configuration Release CODE_SIGNING_ALLOWED=NO build
