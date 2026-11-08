@@ -21,4 +21,4 @@ gradle :app:assembleDebug
 
 - `vendor/ppocr-sdk` 采用 [PaddleOCR 安卓 SDK](https://github.com/PaddlePaddle/PaddleOCR/tree/dab3fe35379033fdcb2d0e9572fac0b36c9a9ebf/deploy/ppocr-android/ppocr-sdk) 的固定源码，保留 [Apache-2.0](vendor/ppocr-sdk/LICENSE) 和源文件版权声明。此处 Gradle 配置为 PaperDock 独立构建而编写。
 - [PP-OCRv6_tiny_det](https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_det) 与 [PP-OCRv6_tiny_rec](https://huggingface.co/PaddlePaddle/PP-OCRv6_tiny_rec) 的模型卡列出 Apache-2.0。下载脚本使用 [官方端侧部署说明](https://www.paddleocr.ai/latest/en/version3.x/inference_deployment/cross_platform/android_deployment.html) 中的 ONNX 档案及固定校验值。
-- [ONNX Runtime](https://github.com/microsoft/onnxruntime) 采用 MIT。OpenCV 的本项目依赖版本为 `4.5.3`，保留对应上游及 AAR 所附许可和通知。Kotlin 协程采用 Apache-2.0。
+- [ONNX Runtime](https://github.com/microsoft/onnxruntime) 采用 MIT。[OpenCV 4.12.0 官方 Android 包](https://central.sonatype.com/artifact/org.opencv/opencv/4.12.0)和 Kotlin 协程采用 Apache-2.0。
