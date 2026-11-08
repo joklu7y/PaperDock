@@ -65,7 +65,7 @@ jobs:
           ')
           xcodebuild -project PaperDockMobile.xcodeproj -scheme PaperDockMobile \
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/PaperDockPackages" -disableAutomaticPackageResolution \
-            -destination "id=$device_id" -parallel-testing-enabled NO test
+            -destination "id=$device_id" -parallel-testing-enabled NO ONLY_ACTIVE_ARCH=YES test
       - name: Build the unsigned iPhone app
         working-directory: mobile/ios
         run: |
