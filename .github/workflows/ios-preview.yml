@@ -38,11 +38,17 @@ jobs:
       - name: Resolve Swift packages before building
         working-directory: mobile/ios
         run: |
-          resolve_packages() {
-            xcodebuild -resolvePackageDependencies -project PaperDockMobile.xcodeproj \
-              -scheme PaperDockMobile -clonedSourcePackagesDirPath "$RUNNER_TEMP/PaperDockPackages"
-          }
-          resolve_packages || resolve_packages
+          # The release page redirect can fail on CI. Fetch the same pinned asset via the API.
+          archive="$RUNNER_TEMP/opencv2.xcframework.zip"
+          curl --fail --location --retry 2 --max-time 180 \
+            -H 'Accept: application/octet-stream' \
+            'https://api.github.com/repos/yeatse/opencv-spm/releases/assets/275558406' -o "$archive"
+          echo "13409e99956a74aaee1856c56889c211116fbc8be2bcbe373986ec9e10f536fc  $archive" | shasum -a 256 -c -
+          cache="$HOME/Library/Caches/org.swift.swiftpm/artifacts"
+          mkdir -p "$cache"
+          cp "$archive" "$cache/https___github_com_yeatse_opencv_spm_releases_download_4_12_0_opencv2_xcframework_zip"
+          xcodebuild -resolvePackageDependencies -project PaperDockMobile.xcodeproj \
+            -scheme PaperDockMobile -clonedSourcePackagesDirPath "$RUNNER_TEMP/PaperDockPackages"
       - name: Run document tests on an iPhone simulator
         working-directory: mobile/ios
         run: |
