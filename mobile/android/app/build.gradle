@@ -1,0 +1,44 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+def previewAbi = providers.gradleProperty('paperdockAbi').orNull
+if (previewAbi != null && !(previewAbi in ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'])) {
+    throw new GradleException("Unsupported Android ABI: ${previewAbi}")
+}
+
+android {
+    namespace 'app.paperdock.mobile'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'app.paperdock.mobile'
+        minSdk 28
+        targetSdk 34
+        versionCode 1
+        versionName '0.1.0-preview'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        if (previewAbi != null) {
+            ndk { abiFilters previewAbi }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
+dependencies {
+    implementation project(':ppocr-sdk')
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0'
+    androidTestImplementation 'androidx.test:runner:1.5.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+}

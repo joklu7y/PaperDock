@@ -1,0 +1,9 @@
+/.gradle/
+/.kotlin/
+/**/build/
+/local.properties
+/.idea/
+*.apk
+*.keystore
+*.jks
+/vendor/ppocr-sdk/src/main/assets/models/

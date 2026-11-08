@@ -1,0 +1,37 @@
+name: iOS offline preview test
+
+on:
+  push:
+    branches: [main, mobile/ios-preview, mobile/previews]
+    paths:
+      - 'mobile/ios/**'
+      - '.github/workflows/ios-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Run document tests on an iPhone simulator
+        working-directory: mobile/ios
+        run: |
+          xcodebuild -version
+          device_id=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          for runtime in reversed(list(runtimes)):
+              for device in runtimes[runtime]:
+                  if device["name"].startswith("iPhone"):
+                      print(device["udid"])
+                      sys.exit(0)
+          sys.exit("No iPhone simulator available")
+          ')
+          xcodebuild -project PaperDockMobile.xcodeproj -scheme PaperDockMobile \
+            -destination "id=$device_id" -parallel-testing-enabled NO test

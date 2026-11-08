@@ -1,0 +1,47 @@
+name: Android offline preview test
+
+on:
+  push:
+    branches: [main, mobile/previews]
+    paths:
+      - 'mobile/android/**'
+      - '.github/workflows/android-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  emulator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Prepare Gradle and offline models
+        run: |
+          test -x "$JAVA_HOME_17_X64/bin/java"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          curl --fail --location --retry 2 --max-time 180 -o "$RUNNER_TEMP/gradle.zip" \
+            https://downloads.gradle.org/distributions/gradle-8.9-bin.zip
+          echo "d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab  $RUNNER_TEMP/gradle.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
+          python3 mobile/android/prepare_models.py --cache "$RUNNER_TEMP/models"
+      - name: Allow this isolated runner to open KVM
+        run: |
+          test -c /dev/kvm
+          if [ ! -w /dev/kvm ]; then
+            sudo chown "$(id -u):$(id -g)" /dev/kvm
+            sudo chmod u+rw /dev/kvm
+          fi
+      - name: Run app tests on an Android emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          emulator-boot-timeout: 240
+          disable-animations: true
+          script: $RUNNER_TEMP/gradle-8.9/bin/gradle -p mobile/android --no-daemon --console=plain :app:connectedDebugAndroidTest || { adb logcat -d -s OpenCVUtils:E AndroidRuntime:E; exit 1; }
