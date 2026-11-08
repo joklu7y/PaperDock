@@ -35,8 +35,10 @@ jobs:
         run: |
           test -x "$JAVA_HOME_17_X64/bin/java"
           echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
-          curl --fail --location --retry 2 --max-time 180 -o "$RUNNER_TEMP/gradle.zip" \
-            https://downloads.gradle.org/distributions/gradle-8.9-bin.zip
+          curl --fail --location --retry 2 --max-time 90 -o "$RUNNER_TEMP/gradle.zip" \
+            https://downloads.gradle.org/distributions/gradle-8.9-bin.zip || \
+          curl --fail --location --retry 2 --max-time 90 -o "$RUNNER_TEMP/gradle.zip" \
+            https://github.com/gradle/gradle-distributions/releases/download/v8.9.0/gradle-8.9-bin.zip
           echo "d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab  $RUNNER_TEMP/gradle.zip" | sha256sum -c -
           unzip -q "$RUNNER_TEMP/gradle.zip" -d "$RUNNER_TEMP"
           python3 mobile/android/prepare_models.py --cache "$RUNNER_TEMP/models"
