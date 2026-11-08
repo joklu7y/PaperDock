@@ -8,6 +8,10 @@
   min-height: 44px;
 }
 
+.pd-mobile .pd-notice-stack {
+  bottom: max(24px, calc(env(safe-area-inset-bottom) + 8px));
+}
+
 @media (max-width: 767px) {
   .pd-mobile .pd-topbar {
     display: grid;

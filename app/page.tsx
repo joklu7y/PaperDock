@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowRightLeft, ClipboardList, Download, ExternalLink, FileDown, FolderOpen, GitCompareArrows, House, LayoutGrid,
-  Menu, Palette, PenLine, ScanText, Search, ShieldCheck, Table2, X, type LucideIcon,
+  Info, Menu, Palette, PenLine, ScanText, Search, ShieldCheck, Table2, X, type LucideIcon,
 } from 'lucide-react';
 import Appearance from './appearance';
 import { WorkbenchContext, filenameOf, readError, requestDocument, type Workbench } from './api';
@@ -47,6 +47,7 @@ export default function Home() {
   const [drawer, setDrawer] = useState(() => !mobileWorkbench || matchMedia('(min-width: 768px)').matches);
   const [query, setQuery] = useState('');
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
+  const [ocrStarted, setOcrStarted] = useState(false);
   const [task, setTask] = useState('');
   const [seconds, setSeconds] = useState(0);
   const [downloads, setDownloads] = useState<SavedDownload[]>([]);
@@ -153,6 +154,7 @@ export default function Home() {
   const matches = query.trim() ? [...tools, ...extras].filter((d) => `${d.label} ${d.description} ${d.keywords}`.toLowerCase().includes(query.trim().toLowerCase())) : [];
   const go = (id: ViewId) => {
     setView(id);
+    if (id !== 'ocr') setOcrStarted(false);
     setQuery('');
     if (mobileWorkbench && matchMedia('(max-width: 767px)').matches) setDrawer(false);
     window.scrollTo({ top: 0 });
@@ -215,9 +217,10 @@ export default function Home() {
   );
 
   const views: Partial<Record<ViewId, ReactNode>> = {
-    home: homeView, ocr: <OcrView />, tables: <TablesView />, pages: <PagesView />, annotate: <AnnotateView />,
+    home: homeView, ocr: <OcrView onRecognitionStart={mobileWorkbench ? () => setOcrStarted(true) : undefined} />, tables: <TablesView />, pages: <PagesView />, annotate: <AnnotateView />,
     forms: <FormsView />, compare: <CompareView />, convert: <ConvertView />, security: <SecurityView />, downloads: downloadsView,
   };
+  const showOcrReminder = mobileWorkbench && view === 'ocr' && ocrStarted;
 
   return (
     <WorkbenchContext.Provider value={workbench}>
@@ -264,19 +267,25 @@ export default function Home() {
             {views[view]}
           </section>
         </div>
-        {(toast || task) && (
-          <div className="fixed bottom-6 left-1/2 z-50 flex w-[min(560px,calc(100vw-32px))] -translate-x-1/2 flex-col gap-2">
+        {(toast || task || showOcrReminder) && (
+          <div className="pd-notice-stack pointer-events-none fixed bottom-6 left-1/2 z-50 flex w-[min(560px,calc(100vw-32px))] -translate-x-1/2 flex-col gap-2">
             {task && (
-              <div className="md-snackbar flex items-center gap-3 rounded-xl bg-m-inverse-surface px-4 py-3 text-sm text-m-inverse-on-surface shadow-lg" role="status">
+              <div className="md-snackbar pointer-events-auto flex items-center gap-3 rounded-xl bg-m-inverse-surface px-4 py-3 text-sm text-m-inverse-on-surface shadow-lg" role="status">
                 <span className="md-spinner shrink-0" /><span className="flex-1">{task} · {seconds} 秒</span>
                 <button type="button" className="font-medium text-m-primary-container" onClick={() => abort.current?.abort()}>取消</button>
               </div>
             )}
             {toast && (
-              <div key={toast.id} className="md-snackbar flex items-start gap-3 rounded-xl bg-m-inverse-surface px-4 py-3 text-sm text-m-inverse-on-surface shadow-lg" role="status" aria-live="polite">
+              <div key={toast.id} className="md-snackbar pointer-events-auto flex items-start gap-3 rounded-xl bg-m-inverse-surface px-4 py-3 text-sm text-m-inverse-on-surface shadow-lg" role="status" aria-live="polite">
                 <span className="flex-1 break-all leading-6">{toast.text}</span>
                 <button type="button" aria-label="关闭提示" onClick={() => setToast(null)} className="opacity-80 hover:opacity-100"><X size={18} /></button>
               </div>
+            )}
+            {showOcrReminder && (
+              <p className="md-snackbar flex w-fit max-w-full items-center gap-2 rounded-full bg-m-secondary-container px-4 py-2.5 text-sm font-medium text-m-on-secondary-container shadow-sm" role="status">
+                <Info size={18} className="shrink-0" aria-hidden="true" />
+                <span>识别可能有误，请仔细甄别</span>
+              </p>
             )}
           </div>
         )}

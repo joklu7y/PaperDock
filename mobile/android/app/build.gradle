@@ -16,8 +16,8 @@ android {
         applicationId 'app.paperdock.mobile'
         minSdk 28
         targetSdk 34
-        versionCode 3
-        versionName '0.2.1-workbench-dev'
+        versionCode 4
+        versionName '0.2.2-workbench-dev'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         if (previewAbi != null) {
             ndk { abiFilters previewAbi }

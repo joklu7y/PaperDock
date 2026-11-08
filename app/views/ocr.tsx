@@ -14,7 +14,7 @@ type RecentRun = { name: string; pages: number; at: string };
 const LIMIT = 10;
 const OCR_TYPES = '.pdf,.jpg,.jpeg,.png,.bmp,.tif,.tiff';
 
-export default function OcrView() {
+export default function OcrView({ onRecognitionStart }: { onRecognitionStart?: () => void } = {}) {
   const { notify, saveBlob, post } = useWorkbench();
   const [queue, setQueue] = useState<QueueFile[]>([]);
   const [result, setResult] = useState<OcrResult | null>(null);
@@ -73,6 +73,7 @@ export default function OcrView() {
 
   const run = async (retryOnly = false) => {
     if (!queue.length) return notify('请先添加 PDF 或图片。');
+    onRecognitionStart?.();
     setRunning(true);
     stop.current = false;
     const targets = queue.filter((item) => !retryOnly || !item.recognized);
@@ -168,14 +169,14 @@ export default function OcrView() {
     <div className="md-view">
       <PageHeader
         title="文字识别 OCR"
-        subtitle="图片、扫描件转可编辑文字；文件只在这台电脑上处理。"
+        subtitle={mobileWorkbench ? '图片、扫描件转可编辑文字，文件只在这台设备上处理。' : '图片、扫描件转可编辑文字；文件只在这台电脑上处理。'}
         actions={<>
           <input ref={projectPicker} type="file" accept=".json" hidden onChange={(event) => { void openProject(event.target.files?.[0]); event.target.value = ''; }} />
           <Button variant="outlined" icon={FolderOpen} onClick={() => projectPicker.current?.click()}>打开工程</Button>
           <Button variant="tonal" icon={Save} onClick={() => void saveProject()}>保存工程</Button>
         </>}
       />
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="space-y-6">
           <Card>
             <DropZone files={[]} onFiles={addFiles} accept={OCR_TYPES} multiple label={mobileWorkbench ? '选择 PDF 或图片' : '拖入或点击选择 PDF / 图片'} hint={`支持 PDF、JPG、PNG、BMP、TIF。${mobileWorkbench ? '' : '也可以直接 Ctrl+V 粘贴截图。'}队列最多 ${LIMIT} 个。`} />
@@ -201,7 +202,7 @@ export default function OcrView() {
             )}
           </Card>
           {result && (
-            <Card title={`原文件对照 · ${items[reviewIndex]?.filename || ''}`}>
+            <Card title={<span className="[overflow-wrap:anywhere]">原文件对照 · {items[reviewIndex]?.filename || ''}</span>}>
               {previewUrl ? (selectedSource?.name.toLowerCase().endsWith('.pdf') ? <iframe title="PDF 原文件对照" src={previewUrl} className="h-[600px] w-full rounded-xl" /> : <img alt="当前校对文件原图" src={previewUrl} className="max-h-[800px] w-full rounded-xl object-contain" />) : <p className="text-sm text-m-on-surface-variant">打开工程后需要重新添加原文件才能对照原图。</p>}
             </Card>
           )}
@@ -228,7 +229,7 @@ export default function OcrView() {
           {result ? (
             <Card title="人工校对" subtitle={`${result.pages} 页 · 修改后可重新导出`}>
               {items.length > 1 && (
-                <select className="md-input mb-3" value={reviewIndex} onChange={(event) => { const index = Number(event.target.value); setReviewIndex(index); setDraft(items[index]?.text || ''); }}>
+                <select className="md-input mb-3 max-w-full" value={reviewIndex} onChange={(event) => { const index = Number(event.target.value); setReviewIndex(index); setDraft(items[index]?.text || ''); }}>
                   {items.map((item, index) => <option key={`${item.job_id}-${index}`} value={index}>{index + 1}. {item.filename}（{item.pages} 页）</option>)}
                 </select>
               )}
