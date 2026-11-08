@@ -7,6 +7,10 @@ on:
       - 'mobile/ios/**'
       - 'mobile/workbench/**'
       - 'app/**'
+      - 'desktop/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.*.config.ts'
       - '.github/workflows/ios-preview.yml'
   workflow_dispatch:
 

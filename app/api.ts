@@ -1,16 +1,12 @@
 'use client';
 
 import { createContext, useContext } from 'react';
-import { mobileWorkbench } from './platform';
+import { requestLocalDocument } from '#paperdock-runtime';
 
 export const API_URL = 'http://127.0.0.1:8001';
 
 export async function requestDocument(path: string, options?: RequestInit): Promise<Response> {
-  if (mobileWorkbench) {
-    const { requestLocalDocument } = await import('../mobile/workbench/api');
-    return requestLocalDocument(path, options);
-  }
-  return fetch(`${API_URL}${path}`, options);
+  return requestLocalDocument(path, options);
 }
 
 export const errorMessage = (detail: unknown, fallback: string) => {

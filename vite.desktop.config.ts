@@ -3,14 +3,22 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/postcss';
 import path from 'node:path';
 
-export default defineConfig({
+export const workbenchConfig = (mobile = false) => defineConfig({
   root: path.resolve(__dirname, 'desktop'),
-  base: '/desktop/',
-  define: { __PAPERDOCK_MOBILE__: false },
+  base: mobile ? './' : '/desktop/',
+  define: { __PAPERDOCK_MOBILE__: mobile },
+  resolve: {
+    alias: {
+      '#paperdock-runtime': path.resolve(__dirname, mobile ? 'mobile/workbench/runtime.ts' : 'desktop/workbench-runtime.ts'),
+    },
+  },
   plugins: [react()],
   css: { postcss: { plugins: [tailwindcss()] } },
   build: {
-    outDir: path.resolve(__dirname, 'desktop-dist'),
+    outDir: path.resolve(__dirname, mobile ? 'mobile/workbench-dist' : 'desktop-dist'),
     emptyOutDir: true,
+    target: mobile ? ['chrome100', 'safari16'] : undefined,
   },
 });
+
+export default workbenchConfig();

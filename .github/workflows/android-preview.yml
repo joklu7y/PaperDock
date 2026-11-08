@@ -7,6 +7,11 @@ on:
       - 'mobile/android/**'
       - 'mobile/workbench/**'
       - 'app/**'
+      - 'desktop/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.*.config.ts'
+      - 'scripts/test-mobile-pdf.mjs'
       - '.github/workflows/android-preview.yml'
   workflow_dispatch:
 

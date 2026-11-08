@@ -5,12 +5,9 @@ import '@fontsource/roboto/400.css';
 import '@fontsource/roboto/500.css';
 import '@fontsource/roboto/700.css';
 import '../app/globals.css';
-import { mobileWorkbench } from '../app/platform';
+import { setupWorkbench } from '#paperdock-runtime';
 
-if (mobileWorkbench) {
-  void import('../mobile/workbench/phone.css');
-  void import('../mobile/workbench/native').then(({ installNativeSaving }) => installNativeSaving());
-}
+setupWorkbench();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

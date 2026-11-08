@@ -1,12 +1,3 @@
-import { defineConfig, mergeConfig } from 'vite';
-import desktop from './vite.desktop.config';
-import path from 'node:path';
+import { workbenchConfig } from './vite.desktop.config';
 
-export default mergeConfig(desktop, defineConfig({
-  base: './',
-  define: { __PAPERDOCK_MOBILE__: true },
-  build: {
-    outDir: path.resolve(__dirname, 'mobile/workbench-dist'),
-    target: ['chrome100', 'safari16'],
-  },
-}));
+export default workbenchConfig(true);

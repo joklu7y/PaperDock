@@ -1,6 +1,6 @@
 # PaperDock 手机工作台开发分支
 
-Android 与 iOS 打包同一套 PaperDock 界面。手机尺寸使用抽屉导航、单列工具卡、独立的搜索行和适合触控的页面工具。Android 的文件选择、保存、截图导入和 OCR 由系统及 PaddleOCR 提供，iOS 对应功能使用系统文件选择器和 Vision。PDF 处理引擎随包携带。
+Android 与 iOS 打包同一套 PaperDock 界面。手机尺寸使用抽屉导航、响应式工具卡、独立的搜索行和适合触控的页面工具。Android 的文件选择、保存、截图导入和 OCR 由系统及 PaddleOCR 提供，iOS 对应功能使用系统文件选择器和 Vision。PDF 处理引擎随包携带。
 
 ```text
 npm ci

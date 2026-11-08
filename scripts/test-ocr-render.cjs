@@ -16,6 +16,7 @@ function render(overrides) {
   const exports = {};
   vm.runInNewContext(compiled, { exports, require(name) {
     if (name === '../api') return { useWorkbench: () => ({}), fileSize: () => '1 MB' };
+    if (name === '../platform') return { mobileWorkbench: false };
     if (name === '../ui') return Object.fromEntries(
       ['Button', 'Card', 'Chip', 'DropZone', 'Empty', 'LinearProgress', 'PageHeader'].map(name => [name, () => null]),
     );
