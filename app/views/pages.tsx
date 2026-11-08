@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { DndContext, KeyboardSensor, MouseSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { ArrowDown, ArrowUp, CheckSquare, Combine, Crop, Download, FilePlus2, Files, Repeat, RotateCcw, RotateCw, Scissors, Stamp, Trash2 } from 'lucide-react';
@@ -14,7 +14,7 @@ const tabs = [['organize', '整理页面'], ['merge', '合并'], ['split', '拆�
 function PageTile({ page, number, selected, onToggle, onRotate, onRemove }: { page: Thumb; number: number; selected: boolean; onToggle: () => void; onRotate: (delta: number) => void; onRemove: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: page.id });
   return (
-    <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 10 : undefined }} className={`group relative rounded-2xl border-2 bg-m-surface-container-lowest p-2 transition-shadow ${selected ? 'border-m-primary' : 'border-transparent'} ${isDragging ? 'shadow-xl' : 'hover:shadow-md'}`}>
+    <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 10 : undefined }} className={`pd-page-tile group relative rounded-2xl border-2 bg-m-surface-container-lowest p-2 transition-shadow ${selected ? 'border-m-primary' : 'border-transparent'} ${isDragging ? 'shadow-xl' : 'hover:shadow-md'}`}>
       <div {...attributes} {...listeners} onClick={onToggle} className="grid aspect-[3/4] cursor-grab place-items-center overflow-hidden rounded-xl bg-m-surface-container active:cursor-grabbing">
         {page.image ? <img src={page.image} alt={`第 ${number} 页`} draggable={false} className="max-h-full max-w-full shadow-sm transition-transform" style={{ transform: `rotate(${page.rotate}deg)` }} /> : <span className="text-xs text-m-on-surface-variant">空白页</span>}
       </div>
@@ -44,7 +44,11 @@ export default function PagesView() {
   const [stampPages, setStampPages] = useState('');
   const [margin, setMargin] = useState('18');
   const [rotation, setRotation] = useState('90');
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 240, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   const load = async (picked: File[]) => {
     setFile(picked);
@@ -92,7 +96,7 @@ export default function PagesView() {
             <DropZone files={file} onFiles={(f) => void load(f)} accept=".pdf" label="选择要整理的 PDF" hint="生成缩略图后可拖拽排序；点击缩略图可多选。" />
           ) : (
             <>
-              <div className="sticky top-0 z-20 -mx-2 mb-4 flex flex-wrap items-center gap-2 rounded-2xl bg-m-surface-container-lowest/95 px-2 py-2 backdrop-blur">
+              <div className="pd-page-toolbar sticky top-0 z-20 -mx-2 mb-4 flex flex-wrap items-center gap-2 rounded-2xl bg-m-surface-container-lowest/95 px-2 py-2 backdrop-blur">
                 <span className="mr-2 text-sm text-m-on-surface-variant">{file[0]?.name} · {pages.length} 页{selected.size ? ` · 已选 ${selected.size}` : ''}</span>
                 <IconButton icon={CheckSquare} label={selected.size === pages.length ? '取消全选' : '全选'} onClick={() => setSelected(selected.size === pages.length ? new Set() : new Set(pages.map((p) => p.id)))} />
                 <IconButton icon={RotateCcw} label="向左旋转（所选或全部）" onClick={() => rotateSelected(-90)} />

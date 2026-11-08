@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { BookOpen, Camera, FileCode2, FileImage, FileSpreadsheet, FileText, FileType2, Images, LayoutTemplate, Presentation } from 'lucide-react';
 import { formOf, readError, useWorkbench } from '../api';
+import { mobileWorkbench } from '../platform';
 import { Button, Card, DropZone, PageHeader, ToolButton } from '../ui';
 
 type Target = { id: string; title: string; description: string; icon: typeof FileText; extra?: boolean; fallback: string };
@@ -35,12 +36,13 @@ export default function ConvertView() {
     return () => window.removeEventListener('paste', onPaste);
   }, []);
   const snip = async () => {
-    notify('请框选屏幕区域（Esc 取消）。');
+    notify(mobileWorkbench ? '请选择一张手机截图。' : '请框选屏幕区域（Esc 取消）。');
     const response = await post('/capture/snip', new FormData(), '等待截图');
     if (!response) return;
     if (!response.ok) return notify(await readError(response, '截图失败'));
     const blob = await response.blob();
-    setImages((old) => [...old, new File([blob], `截图-${new Date().toLocaleTimeString().replaceAll(':', '')}.png`, { type: 'image/png' })].slice(0, 10));
+    const extension = blob.type === 'image/jpeg' ? 'jpg' : 'png';
+    setImages((old) => [...old, new File([blob], `截图-${new Date().toLocaleTimeString().replaceAll(':', '')}.${extension}`, { type: blob.type })].slice(0, 10));
   };
   const convert = async (target: Target) => {
     if (!pdf.length) return notify('请先选择 PDF。');
@@ -56,10 +58,10 @@ export default function ConvertView() {
   return (
     <div className="md-view mx-auto max-w-5xl">
       <PageHeader title="格式转换" subtitle="图片和截图转 PDF；PDF 导出为 Office、电子书、Markdown 等格式。" />
-      <Card title="图片 / 截图 → PDF" subtitle="最多 10 张，按列表顺序成页；可 Ctrl+V 粘贴截图">
+      <Card title="图片 / 截图 → PDF" subtitle={mobileWorkbench ? '最多 10 张，按列表顺序成页。' : '最多 10 张，按列表顺序成页；可 Ctrl+V 粘贴截图'}>
         <DropZone files={images} onFiles={setImages} accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff" multiple label="选择图片" compact />
         <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <Button variant="outlined" icon={Camera} disabled={busy} onClick={() => void snip()}>截取屏幕</Button>
+          <Button variant="outlined" icon={Camera} disabled={busy} onClick={() => void snip()}>{mobileWorkbench ? '导入截图' : '截取屏幕'}</Button>
           <Button variant="filled" icon={FileImage} disabled={!images.length || busy} onClick={async () => { await saveResponse(await post('/convert', formOf({ files: images, target: 'pdf' }), '正在生成 PDF'), 'converted.pdf'); }}>生成 PDF</Button>
         </div>
       </Card>

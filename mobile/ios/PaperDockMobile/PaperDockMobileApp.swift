@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 @main
 struct PaperDockMobileApp: App {
     var body: some Scene {
-        WindowGroup { WorkbenchView() }
+        WindowGroup { WorkbenchHost().ignoresSafeArea(.container, edges: .bottom) }
     }
 }
 

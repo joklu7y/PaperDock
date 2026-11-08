@@ -2,9 +2,24 @@
 import PDFKit
 import UIKit
 import XCTest
+import WebKit
 @testable import PaperDockMobile
 
 final class LocalDocumentsTests: XCTestCase {
+    @MainActor
+    func testBundledWorkbenchLoadsInWebView() async throws {
+        let controller = WorkbenchController()
+        controller.loadViewIfNeeded()
+        defer { controller.detach() }
+        let view = try XCTUnwrap(controller.view as? WKWebView)
+        for _ in 0..<20 {
+            let ready = try? await view.evaluateJavaScript("!!document.querySelector('.pd-mobile') && document.body.innerText.includes('今天想处理什么文档')") as? Bool
+            if ready == true { return }
+            try await Task.sleep(nanoseconds: 500_000_000)
+        }
+        XCTFail("The offline PaperDock workbench did not load in WKWebView.")
+    }
+
     func testSearchablePDFUsesTextLayer() throws {
         try withFixtureDirectory { directory in
             let pdf = directory.appendingPathComponent("searchable.pdf")

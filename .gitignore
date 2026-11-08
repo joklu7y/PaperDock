@@ -58,3 +58,4 @@ __pycache__/
 *.pyc
 *.log
 tsconfig.tsbuildinfo
+mobile/workbench-dist/

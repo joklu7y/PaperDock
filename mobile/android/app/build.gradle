@@ -16,8 +16,8 @@ android {
         applicationId 'app.paperdock.mobile'
         minSdk 28
         targetSdk 34
-        versionCode 1
-        versionName '0.1.0-preview'
+        versionCode 2
+        versionName '0.2.0-workbench-dev'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         if (previewAbi != null) {
             ndk { abiFilters previewAbi }
@@ -28,7 +28,20 @@ android {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
+    sourceSets.main.assets.srcDir layout.buildDirectory.dir('generated/workbench-assets')
 }
+
+tasks.register('copyWorkbench', Sync) {
+    from layout.projectDirectory.dir('../../workbench-dist')
+    into layout.buildDirectory.dir('generated/workbench-assets/workbench')
+    doFirst {
+        if (!layout.projectDirectory.file('../../workbench-dist/index.html').asFile.isFile()) {
+            throw new GradleException('Build the shared workbench with npm run build:mobile first.')
+        }
+    }
+}
+
+tasks.named('preBuild') { dependsOn 'copyWorkbench' }
 
 kotlin {
     compilerOptions {

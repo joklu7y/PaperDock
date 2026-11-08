@@ -6,6 +6,7 @@ import path from 'node:path';
 export default defineConfig({
   root: path.resolve(__dirname, 'desktop'),
   base: '/desktop/',
+  define: { __PAPERDOCK_MOBILE__: false },
   plugins: [react()],
   css: { postcss: { plugins: [tailwindcss()] } },
   build: {

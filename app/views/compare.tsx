@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Download, GitCompareArrows } from 'lucide-react';
-import { API_URL, formOf, readError, useWorkbench } from '../api';
+import { formOf, readError, requestDocument, useWorkbench } from '../api';
 import { Button, Card, DropZone, Empty, PageHeader } from '../ui';
 
 type Change = { type: 'insert' | 'delete' | 'replace'; old: string; new: string; page_old: number | null; page_new: number | null; context: string };
@@ -23,7 +23,7 @@ export default function CompareView() {
   };
   const report = async () => {
     if (!result?.report) return;
-    const response = await fetch(`${API_URL}/jobfile/${result.job_id}/${result.report}`);
+    const response = await requestDocument(`/jobfile/${result.job_id}/${result.report}`);
     if (!response.ok) return notify(await readError(response, '报告已过期'));
     await saveBlob(await response.blob(), '对比报告.pdf');
   };

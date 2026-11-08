@@ -6,7 +6,8 @@ import {
   Menu, Palette, PenLine, ScanText, Search, ShieldCheck, Table2, X, type LucideIcon,
 } from 'lucide-react';
 import Appearance from './appearance';
-import { API_URL, WorkbenchContext, filenameOf, readError, type Workbench } from './api';
+import { WorkbenchContext, filenameOf, readError, requestDocument, type Workbench } from './api';
+import { mobileWorkbench } from './platform';
 import { Button, Card, Empty, IconButton, LinearProgress, PageHeader } from './ui';
 import OcrView from './views/ocr';
 import TablesView from './views/tables';
@@ -43,7 +44,7 @@ const extras: Destination[] = [
 
 export default function Home() {
   const [view, setView] = useState<ViewId>('home');
-  const [drawer, setDrawer] = useState(true);
+  const [drawer, setDrawer] = useState(() => !mobileWorkbench || matchMedia('(min-width: 768px)').matches);
   const [query, setQuery] = useState('');
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
   const [task, setTask] = useState('');
@@ -53,6 +54,13 @@ export default function Home() {
   const searchBox = useRef<HTMLInputElement>(null);
 
   const notify = useCallback((text: string) => setToast({ id: Date.now(), text }), []);
+  useEffect(() => {
+    if (!mobileWorkbench) return;
+    const wide = matchMedia('(min-width: 768px)');
+    const fit = () => setDrawer(wide.matches);
+    wide.addEventListener('change', fit);
+    return () => wide.removeEventListener('change', fit);
+  }, []);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), Math.min(10000, 4000 + toast.text.length * 60));
@@ -75,7 +83,10 @@ export default function Home() {
     const onKey = (event: KeyboardEvent) => {
       const typing = event.target instanceof HTMLElement && /INPUT|TEXTAREA|SELECT/.test(event.target.tagName);
       if (event.key === '/' && !typing) { event.preventDefault(); searchBox.current?.focus(); }
-      if (event.key === 'Escape') setQuery('');
+      if (event.key === 'Escape') {
+        setQuery('');
+        if (mobileWorkbench && matchMedia('(max-width: 767px)').matches) setDrawer(false);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -120,7 +131,7 @@ export default function Home() {
     abort.current = controller;
     setTask(label);
     try {
-      return await fetch(`${API_URL}${path}`, body instanceof FormData
+      return await requestDocument(path, body instanceof FormData
         ? { method: 'POST', body, signal: controller.signal }
         : { method: 'POST', body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' }, signal: controller.signal });
     } catch {
@@ -140,7 +151,12 @@ export default function Home() {
 
   const workbench = useMemo<Workbench>(() => ({ notify, saveBlob, post, saveResponse, busy: !!task }), [notify, saveBlob, post, saveResponse, task]);
   const matches = query.trim() ? [...tools, ...extras].filter((d) => `${d.label} ${d.description} ${d.keywords}`.toLowerCase().includes(query.trim().toLowerCase())) : [];
-  const go = (id: ViewId) => { setView(id); setQuery(''); window.scrollTo({ top: 0 }); };
+  const go = (id: ViewId) => {
+    setView(id);
+    setQuery('');
+    if (mobileWorkbench && matchMedia('(max-width: 767px)').matches) setDrawer(false);
+    window.scrollTo({ top: 0 });
+  };
   const openDownload = async (id: string, folder: boolean) => {
     try { const response = await window.pywebview?.api.open_download(id, folder); if (response?.error) notify(response.error); }
     catch { notify('无法打开，请检查文件是否存在。'); }
@@ -159,7 +175,7 @@ export default function Home() {
     <div className="md-view">
       <div className="md-header mb-8 mt-2">
         <h2 className="text-[32px] font-normal leading-10 text-m-on-surface">今天想处理什么文档？</h2>
-        <p className="mt-2 text-m-on-surface-variant">所有处理都在本机完成。按 <kbd className="rounded border border-m-outline-variant px-1.5 text-xs">/</kbd> 可以快速搜索工具。</p>
+        <p className="mt-2 text-m-on-surface-variant">{mobileWorkbench ? '文件在手机上处理。选择工具开始。' : <>所有处理都在本机完成。按 <kbd className="rounded border border-m-outline-variant px-1.5 text-xs">/</kbd> 可以快速搜索工具。</>}</p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {tools.map((t) => (
@@ -188,7 +204,7 @@ export default function Home() {
               <li key={item.id} className="flex flex-wrap items-center gap-3 py-3">
                 <FileDown size={20} className="text-m-primary" />
                 <div className="min-w-0 flex-1"><p className="truncate text-sm text-m-on-surface">{item.name}</p><p className="truncate text-xs text-m-on-surface-variant">{item.path || item.status}</p></div>
-                {item.path && <><IconButton icon={ExternalLink} label="打开文件" onClick={() => void openDownload(item.id, false)} /><IconButton icon={FolderOpen} label="打开所在文件夹" onClick={() => void openDownload(item.id, true)} /></>}
+                {item.path && <><IconButton icon={ExternalLink} label="打开文件" onClick={() => void openDownload(item.id, false)} /><IconButton icon={FolderOpen} label={mobileWorkbench ? '分享文件' : '打开所在文件夹'} onClick={() => void openDownload(item.id, true)} /></>}
                 {item.blob && <Button variant="text" onClick={() => item.blob && void saveBlob(item.blob, item.name)}>重新保存</Button>}
               </li>
             ))}
@@ -205,17 +221,17 @@ export default function Home() {
 
   return (
     <WorkbenchContext.Provider value={workbench}>
-      <main className="pd-app min-h-screen bg-m-surface text-m-on-surface">
-        <header className="md-surface sticky top-0 z-30 flex h-16 items-center gap-2 bg-m-surface px-2 sm:px-4">
-          <IconButton icon={Menu} label="展开或收起导航" onClick={() => setDrawer((open) => !open)} />
-          <button type="button" onClick={() => go('home')} className="flex items-center gap-2 rounded-full px-2 py-1">
+      <main className={`pd-app min-h-screen bg-m-surface text-m-on-surface${mobileWorkbench ? ' pd-mobile' : ''}`}>
+        <header className="pd-topbar md-surface sticky top-0 z-30 flex h-16 items-center gap-2 bg-m-surface px-2 sm:px-4">
+          <IconButton icon={Menu} label="展开或收起导航" aria-controls="workbench-navigation" aria-expanded={drawer} onClick={() => setDrawer((open) => !open)} />
+          <button type="button" onClick={() => go('home')} className="pd-brand flex items-center gap-2 rounded-full px-2 py-1">
             <span className="grid size-9 place-items-center rounded-xl bg-m-primary text-m-on-primary"><ScanText size={20} /></span>
             <span className="hidden text-[22px] text-m-on-surface sm:inline">PaperDock</span>
           </button>
-          <div className="relative mx-auto w-full max-w-[720px]">
+          <div className="pd-search relative mx-auto w-full max-w-[720px]">
             <Search size={20} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-m-on-surface-variant" />
             <input ref={searchBox} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && matches[0]) go(matches[0].id); }}
-              placeholder="搜索工具，例如“拆分”“签名”“表格”" aria-label="搜索工具"
+              placeholder={mobileWorkbench ? '搜索拆分、签名、表格等工具' : '搜索工具，例如“拆分”“签名”“表格”'} aria-label="搜索工具"
               className="h-12 w-full rounded-full bg-m-surface-container-high pl-12 pr-12 text-[15px] text-m-on-surface outline-none transition-shadow placeholder:text-m-on-surface-variant focus:bg-m-surface-container-lowest focus:shadow-md" />
             {query && <IconButton icon={X} label="清除搜索" className="absolute right-1 top-1/2 -translate-y-1/2" onClick={() => setQuery('')} />}
             {query.trim() && (
@@ -233,7 +249,9 @@ export default function Home() {
           {task && <div className="absolute inset-x-0 bottom-0"><LinearProgress /></div>}
         </header>
         <div className="flex">
-          <nav className={`md-surface sticky top-16 h-[calc(100vh-4rem)] shrink-0 overflow-y-auto bg-m-surface px-3 pb-6 transition-all ${drawer ? 'w-64' : 'w-0 overflow-hidden px-0'}`} aria-label="主导航">
+          {mobileWorkbench && drawer && <button type="button" className="pd-drawer-backdrop" aria-label="关闭导航" onClick={() => setDrawer(false)} />}
+          <nav id="workbench-navigation" data-open={drawer} className={`pd-navigation md-surface sticky top-16 h-[calc(100vh-4rem)] shrink-0 overflow-y-auto bg-m-surface px-3 pb-6 transition-all ${drawer ? 'w-64' : 'w-0 overflow-hidden px-0'}`} aria-label="主导航">
+            {mobileWorkbench && <div className="pd-drawer-title"><span>PaperDock</span><IconButton icon={X} label="收起导航" onClick={() => setDrawer(false)} /></div>}
             {navItem({ id: 'home', label: '首页', icon: House, description: '', keywords: '' })}
             <p className="px-4 pb-1 pt-4 text-xs font-medium text-m-on-surface-variant">工具</p>
             {tools.map((t) => navItem(t))}
@@ -241,7 +259,7 @@ export default function Home() {
             {navItem(extras[0], downloads.length ? <span className="text-xs">{downloads.length}</span> : null)}
             {navItem(extras[1])}
           </nav>
-          <section className="min-w-0 flex-1 px-4 pb-24 pt-2 sm:px-8">
+          <section className="pd-workspace min-w-0 flex-1 px-4 pb-24 pt-2 sm:px-8">
             <Appearance visible={view === 'appearance'} busy={!!task} save={saveBlob} />
             {views[view]}
           </section>

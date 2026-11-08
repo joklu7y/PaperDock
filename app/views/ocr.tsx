@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Camera, FileDown, FolderOpen, Play, RotateCcw, Save, ScanText, Square, Trash2 } from 'lucide-react';
-import { API_URL, errorMessage, fileSize, readError, useWorkbench } from '../api';
+import { errorMessage, fileSize, readError, requestDocument, useWorkbench } from '../api';
+import { mobileWorkbench } from '../platform';
 import { Button, Card, Chip, DropZone, Empty, LinearProgress, PageHeader } from '../ui';
 
 type OcrLine = { text: string; score: number; page: number };
@@ -61,11 +62,13 @@ export default function OcrView() {
   });
 
   const snip = async () => {
-    notify('请框选屏幕区域，截图会自动加入队列（Esc 取消）。');
+    notify(mobileWorkbench ? '请选择一张手机截图。' : '请框选屏幕区域，截图会自动加入队列（Esc 取消）。');
     const response = await post('/capture/snip', new FormData(), '等待截图');
     if (!response) return;
     if (!response.ok) return notify(await readError(response, '截图失败'));
-    addFiles([new File([await response.blob()], `截图-${new Date().toLocaleTimeString().replaceAll(':', '')}.png`, { type: 'image/png' })]);
+    const screenshot = await response.blob();
+    const extension = screenshot.type === 'image/jpeg' ? 'jpg' : 'png';
+    addFiles([new File([screenshot], `截图-${new Date().toLocaleTimeString().replaceAll(':', '')}.${extension}`, { type: screenshot.type })]);
   };
 
   const run = async (retryOnly = false) => {
@@ -87,7 +90,7 @@ export default function OcrView() {
         body.append('file', item.source);
         body.append('language', mode === 'english' ? 'en' : 'ch');
         try {
-          const response = await fetch(`${API_URL}/ocr`, { method: 'POST', body });
+          const response = await requestDocument('/ocr', { method: 'POST', body });
           const data = (await response.json()) as OcrResult & { detail?: unknown };
           if (!response.ok) throw new Error(errorMessage(data.detail, 'OCR 服务错误'));
           const recognized = { filename: data.filename || item.source.name, text: data.text, pages: data.pages, job_id: data.job_id, lines: (data as unknown as OcrItem).lines };
@@ -101,7 +104,7 @@ export default function OcrView() {
       }
       const items = queue.flatMap((item) => (done.has(item.source) ? [done.get(item.source)!] : []));
       if (!items.length) return notify('没有文件识别成功，请检查失败项后重试。');
-      const response = await fetch(`${API_URL}/ocr/combine`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) });
+      const response = await requestDocument('/ocr/combine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) });
       const data = (await response.json()) as OcrResult & { detail?: unknown };
       if (!response.ok) throw new Error(errorMessage(data.detail, '合并导出失败'));
       setResult(data);
@@ -119,7 +122,7 @@ export default function OcrView() {
 
   const downloadExport = async (jobId: string, name: string) => {
     try {
-      const response = await fetch(`${API_URL}/download/${jobId}/${name}`);
+      const response = await requestDocument(`/download/${jobId}/${name}`);
       if (!response.ok) return notify(await readError(response, '导出文件下载失败'));
       await saveBlob(await response.blob(), name);
     } catch { notify('获取导出文件失败，请检查本地服务。'); }
@@ -132,7 +135,7 @@ export default function OcrView() {
     try {
       const items = result.items?.map((item, i) => (i === reviewIndex ? { ...item, text: draft } : item));
       const text = items ? combined(items) : draft;
-      const response = await fetch(`${API_URL}/exports/${result.job_id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+      const response = await requestDocument(`/exports/${result.job_id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
       const data = (await response.json()) as { exports?: Record<string, string>; detail?: unknown };
       if (!response.ok || !data.exports) return notify(errorMessage(data.detail, '校对结果保存失败'));
       setResult({ ...result, text, items, exports: data.exports });
@@ -147,7 +150,7 @@ export default function OcrView() {
       const data = JSON.parse(await file.text());
       if (data.format !== 'paperdock' || data.version !== 1 || typeof data.draft !== 'string') throw new Error('工程文件格式不正确');
       if (data.result) {
-        const response = await fetch(`${API_URL}/ocr/combine`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: data.result.items || [{ filename: '恢复的工程', text: data.result.text, pages: data.result.pages, job_id: '' }] }) });
+        const response = await requestDocument('/ocr/combine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: data.result.items || [{ filename: '恢复的工程', text: data.result.text, pages: data.result.pages, job_id: '' }] }) });
         if (!response.ok) throw new Error('恢复导出文件失败');
         setResult(await response.json());
       } else setResult(null);

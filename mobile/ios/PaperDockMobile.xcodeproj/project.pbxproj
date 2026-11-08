@@ -10,15 +10,15 @@
         A10000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalDocuments.swift; sourceTree = "<group>"; };
         A10000000000000000000005 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PaperDockMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
         A10000000000000000000006 = {isa = PBXGroup; children = (A10000000000000000000007, A10000000000000000000022, A10000000000000000000008,); sourceTree = "<group>"; };
-        A10000000000000000000007 = {isa = PBXGroup; children = (A10000000000000000000003, A10000000000000000000004,); path = PaperDockMobile; sourceTree = "<group>"; };
+        A10000000000000000000007 = {isa = PBXGroup; children = (A10000000000000000000003, A10000000000000000000004, A10000000000000000000031,); path = PaperDockMobile; sourceTree = "<group>"; };
         A10000000000000000000008 = {isa = PBXGroup; children = (A10000000000000000000005, A10000000000000000000023,); name = Products; sourceTree = "<group>"; };
-        A10000000000000000000009 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001, A10000000000000000000002,); runOnlyForDeploymentPostprocessing = 0; };
+        A10000000000000000000009 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000001, A10000000000000000000002, A10000000000000000000032,); runOnlyForDeploymentPostprocessing = 0; };
         A10000000000000000000010 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
         A10000000000000000000011 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
         A10000000000000000000012 = {
             isa = PBXNativeTarget;
             buildConfigurationList = A10000000000000000000016;
-            buildPhases = (A10000000000000000000009, A10000000000000000000010, A10000000000000000000011,);
+            buildPhases = (A10000000000000000000009, A10000000000000000000010, A10000000000000000000011, A10000000000000000000033,);
             buildRules = ();
             dependencies = ();
             name = PaperDockMobile;
@@ -112,6 +112,19 @@
                 TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PaperDockMobile.app/PaperDockMobile";
             };
             name = Debug;
+        };
+        A10000000000000000000031 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkbenchHost.swift; sourceTree = "<group>"; };
+        A10000000000000000000032 = {isa = PBXBuildFile; fileRef = A10000000000000000000031; };
+        A10000000000000000000033 = {
+            isa = PBXShellScriptBuildPhase;
+            buildActionMask = 2147483647;
+            files = ();
+            inputPaths = ("$(SRCROOT)/../workbench-dist",);
+            outputPaths = ("$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/workbench",);
+            name = "Bundle the local workbench";
+            runOnlyForDeploymentPostprocessing = 0;
+            shellPath = /bin/sh;
+            shellScript = "set -eu\nsource_dir=\"$SRCROOT/../workbench-dist\"\nif [ ! -f \"$source_dir/index.html\" ]; then echo 'error: Run npm run build:mobile before building iOS.'; exit 1; fi\ndestination=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/workbench\"\nmkdir -p \"$destination\"\nditto \"$source_dir\" \"$destination\"\n";
         };
     };
     rootObject = A10000000000000000000013;

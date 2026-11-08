@@ -13,7 +13,9 @@ enum LocalDocuments {
         guard !urls.contains(where: isPDF) || urls.count == 1 else { throw Issue("请单独导入一份 PDF。") }
     }
 
-    static func recognize(_ urls: [URL]) throws -> String {
+    static func pageCount(_ url: URL) -> Int { isPDF(url) ? PDFDocument(url: url)?.pageCount ?? 1 : 1 }
+
+    static func recognize(_ urls: [URL], language: String = "ch") throws -> String {
         try validate(urls)
         if let url = urls.first, isPDF(url) {
             return try withAccess(url) {
@@ -31,7 +33,7 @@ enum LocalDocuments {
                             let factor = 1800 / max(bounds.width, bounds.height, 1)
                             let size = CGSize(width: max(1, bounds.width * factor), height: max(1, bounds.height * factor))
                             guard let image = page.thumbnail(of: size, for: .mediaBox).cgImage else { throw Issue("无法渲染第 \(index + 1) 页。") }
-                            text = try recognizeImage(image)
+                            text = try recognizeImage(image, language: language)
                         } else {
                             text = native
                         }
@@ -42,7 +44,7 @@ enum LocalDocuments {
         }
         return try urls.compactMap { url -> String? in
             try autoreleasepool {
-                let text = try withAccess(url) { try recognizeImage(image(at: url)) }
+                let text = try withAccess(url) { try recognizeImage(image(at: url), language: language) }
                 return text.isEmpty ? nil : text
             }
         }.joined(separator: "\n\n")
@@ -79,11 +81,11 @@ enum LocalDocuments {
         return data
     }
 
-    private static func recognizeImage(_ image: CGImage) throws -> String {
+    private static func recognizeImage(_ image: CGImage, language: String) throws -> String {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         let supported = try request.supportedRecognitionLanguages()
-        let wanted = ["zh-Hans", "en-US"].filter { supported.contains($0) }
+        let wanted = (language == "en" ? ["en-US"] : ["zh-Hans", "en-US"]).filter { supported.contains($0) }
         if !wanted.isEmpty { request.recognitionLanguages = wanted }
         request.usesLanguageCorrection = true
         try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
