@@ -175,9 +175,9 @@ export default function Home() {
     <div className="md-view">
       <div className="md-header mb-8 mt-2">
         <h2 className="text-[32px] font-normal leading-10 text-m-on-surface">今天想处理什么文档？</h2>
-        <p className="mt-2 text-m-on-surface-variant">{mobileWorkbench ? '文件在手机上处理。选择工具开始。' : <>所有处理都在本机完成。按 <kbd className="rounded border border-m-outline-variant px-1.5 text-xs">/</kbd> 可以快速搜索工具。</>}</p>
+        <p className="mt-2 text-m-on-surface-variant">{mobileWorkbench ? '文档在手机上离线处理。' : <>所有处理都在本机完成。按 <kbd className="rounded border border-m-outline-variant px-1.5 text-xs">/</kbd> 可以快速搜索工具。</>}</p>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="pd-tool-list grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {tools.map((t) => (
           <button key={t.id} type="button" onClick={() => go(t.id)} className="md-card group flex flex-col items-start rounded-[24px] bg-m-surface-container-lowest p-5 text-left transition-all hover:-translate-y-0.5 hover:shadow-lg">
             <span className="grid size-12 place-items-center rounded-2xl bg-m-primary-container text-m-on-primary-container transition-transform group-hover:scale-105"><t.icon size={24} /></span>

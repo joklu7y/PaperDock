@@ -6,6 +6,14 @@ import UIKit
 import Vision
 
 enum LocalDocuments {
+    struct LocatedText: Sendable {
+        let text: String
+        let box: [Double]
+    }
+
+    static func imageLocations(_ url: URL, language: String) throws -> [LocatedText] {
+        try withAccess(url) { try recognizeLocations(image(at: url), language: language) }
+    }
     static func isPDF(_ url: URL) -> Bool { url.pathExtension.lowercased() == "pdf" }
 
     static func validate(_ urls: [URL]) throws {
@@ -82,6 +90,10 @@ enum LocalDocuments {
     }
 
     private static func recognizeImage(_ image: CGImage, language: String) throws -> String {
+        try recognizeLocations(image, language: language).map(\.text).joined(separator: "\n")
+    }
+
+    private static func recognizeLocations(_ image: CGImage, language: String) throws -> [LocatedText] {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         let supported = try request.supportedRecognitionLanguages()
@@ -89,7 +101,11 @@ enum LocalDocuments {
         if !wanted.isEmpty { request.recognitionLanguages = wanted }
         request.usesLanguageCorrection = true
         try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
-        return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+        return (request.results ?? []).compactMap { observation in
+            guard let text = observation.topCandidates(1).first?.string else { return nil }
+            let box = observation.boundingBox
+            return LocatedText(text: text, box: [Double(box.minX), Double(1 - box.maxY), Double(box.maxX), Double(1 - box.minY)])
+        }
     }
 
     private static func image(at url: URL) throws -> CGImage {

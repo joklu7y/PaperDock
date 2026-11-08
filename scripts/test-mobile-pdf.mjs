@@ -2,8 +2,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Font, PDFDocument } from 'mupdf';
-import { unzipSync } from 'fflate';
+import { strFromU8, unzipSync } from 'fflate';
 import { mergePdf, organizePdf, renderPdf, repairPdf, securePdf, splitPdf, transformPdf } from '../mobile/workbench/pdf.ts';
+import { editAnnotations, editForm, signPdf } from '../mobile/workbench/pdf-edit.ts';
+import { convertPdf, renderPng } from '../mobile/workbench/formats.ts';
+import { compareDocuments } from '../mobile/workbench/compare.ts';
+import { extractTables } from '../mobile/workbench/tables.ts';
+import { restoreLayout } from '../mobile/workbench/layout.ts';
 
 const source = new PDFDocument();
 const font = source.addSimpleFont(new Font('Helvetica'));
@@ -75,4 +80,87 @@ test('protects with AES, removes an authorized password and permanently redacts'
   assert.match(text, /first/);
   assert.doesNotMatch(text, /secret/);
   redacted.destroy();
+});
+
+test('writes visible annotations, updates their categories and stamps an image', async () => {
+  const ops = [{ type: 'highlight', page: 0, text: 'secret', status: '待处理', category: '审阅' }, { type: 'note', page: 1, content: '检查' }];
+  const added = await editAnnotations('apply', form({ ops: JSON.stringify(ops) }));
+  assert.equal(added.headers.get('X-PaperDock-Added'), '2');
+  const data = await added.blob();
+  const list = (await (await editAnnotations('list', form({}, data))).json()).annotations;
+  assert.equal(list[0].category, '审阅');
+  const updates = JSON.stringify([{ page: 0, xref: list[0].xref, status: '已完成' }, { page: 1, xref: list[1].xref, delete: true }]);
+  const updated = await editAnnotations('update', form({ updates }, data));
+  const changes = (await (await editAnnotations('list', form({}, await updated.blob()))).json()).annotations;
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].status, '已完成');
+
+  const original = new PDFDocument(await fixture.arrayBuffer());
+  const sign = form({ page: '1', rect: '[20,90,150,130]', date_text: '2026/11/08' });
+  sign.append('signature', new Blob([renderPng(original.loadPage(0)).png]), 'signature.png');
+  original.destroy();
+  const signed = await open(await signPdf(sign));
+  assert.deepEqual(signed.loadPage(1).getAnnotations().map((annotation) => annotation.getType()), ['Stamp', 'FreeText']);
+  signed.destroy();
+});
+
+test('reads, fills and flattens a PDF AcroForm', async () => {
+  const doc = new PDFDocument();
+  const helvetica = doc.addSimpleFont(new Font('Helvetica'));
+  const page = doc.addPage([0, 0, 200, 300], 0, {}, '');
+  doc.insertPage(-1, page);
+  const widget = doc.addObject({ Type: doc.newName('Annot'), Subtype: doc.newName('Widget'), FT: doc.newName('Tx'),
+    Rect: [20, 20, 150, 40], T: doc.newString('Name'), V: doc.newString(''), DA: doc.newString('/Helv 10 Tf 0 g'), F: 4, P: page });
+  page.put('Annots', [widget]);
+  doc.getTrailer().get('Root').put('AcroForm', { Fields: [widget], DR: { Font: { Helv: helvetica } }, DA: doc.newString('/Helv 10 Tf 0 g') });
+  const buffer = doc.saveToBuffer('');
+  const input = new Blob([Uint8Array.from(buffer.asUint8Array())]);
+  buffer.destroy();
+  doc.destroy();
+  const { fields } = await (await editForm('fields', form({}, input))).json();
+  assert.equal(fields[0].name, 'Name');
+  const values = JSON.stringify({ [`0:${fields[0].xref}`]: 'PaperDock' });
+  const filled = await editForm('fill', form({ values, flatten: 'true' }, input));
+  assert.equal(filled.headers.get('X-PaperDock-Filled'), '1');
+  const output = await open(filled);
+  assert.equal(output.loadPage(0).getWidgets().length, 0);
+  assert.match(output.loadPage(0).toStructuredText('').asText(), /PaperDock/);
+  output.destroy();
+});
+
+test('exports valid document formats and compares text at character granularity', async () => {
+  const document = new File([fixture], 'source.pdf', { type: 'application/pdf' });
+  for (const [format, entry] of [['docx', 'word/document.xml'], ['xlsx', 'xl/worksheets/sheet1.xml'], ['odt', 'content.xml'], ['epub', 'EPUB/p0.xhtml'], ['pptx', 'ppt/notesSlides/notesSlide1.xml']]) {
+    const result = await convertPdf(document, format, 'ch');
+    const files = unzipSync(new Uint8Array(await result.arrayBuffer()));
+    assert.match(strFromU8(files[entry]), /first secret/);
+  }
+  const pair = new FormData();
+  pair.append('file_a', new File(['待处理 2025'], 'old.txt'));
+  pair.append('file_b', new File(['待处理 2026'], 'new.txt'));
+  const diff = await compareDocuments(pair);
+  assert.equal(diff.stats.replace, 1);
+  assert.equal(diff.changes[0].old, '5');
+  assert.equal(diff.changes[0].new, '6');
+});
+
+test('preserves table cells in XLSX and in a restored Word layout', async () => {
+  const doc = new PDFDocument();
+  const font = doc.addSimpleFont(new Font('Helvetica'));
+  const rows = [['ID', 'TEMP', 'VALUE'], ['A', '120', '0.5'], ['B', '135', '0.8'], ['C', '150', '1.1']];
+  const body = rows.flatMap((row, y) => row.map((cell, x) => `BT /F 12 Tf ${30 + x * 120} ${400 - y * 25} Td (${cell}) Tj ET`)).join('\n');
+  doc.insertPage(-1, doc.addPage([0, 0, 500, 500], 0, { Font: { F: font } }, body));
+  const data = doc.saveToBuffer('');
+  const file = new File([Uint8Array.from(data.asUint8Array())], 'table.pdf');
+  data.destroy();
+  doc.destroy();
+  const input = new FormData();
+  input.append('files', file);
+  const response = await extractTables(input);
+  assert.equal(response.headers.get('X-PaperDock-Tables'), '1');
+  const sheet = unzipSync(new Uint8Array(await response.arrayBuffer()));
+  assert.match(strFromU8(sheet['xl/worksheets/sheet1.xml']), /r="B3"[^>]*><is><t[^>]*>135<\/t>/);
+  const layout = await restoreLayout(file, 'layout-docx', 'ch');
+  const zip = unzipSync(new Uint8Array(await layout.arrayBuffer()));
+  assert.match(strFromU8(zip['word/document.xml']), /<w:tbl>[\s\S]*135/);
 });

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+import AVFoundation
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -27,10 +28,15 @@ final class WorkbenchController: UIViewController, WKNavigationDelegate, WKScrip
     private var pick: Pick?
     private var preview: UIDocumentInteractionController?
     private var previewAccess: URL?
+    private var videoExporter: AVAssetExportSession?
+    private var preparingVideo = false
+    private var videoCancelled = false
 
     override func loadView() {
         let configuration = WKWebViewConfiguration()
         configuration.setURLSchemeHandler(WorkbenchAssets(), forURLScheme: "paperdock")
+        configuration.allowsInlineMediaPlayback = true
+        configuration.mediaTypesRequiringUserActionForPlayback = []
         configuration.userContentController.add(self, name: "paperdock")
         configuration.userContentController.addUserScript(WKUserScript(source: """
         if (!crypto.randomUUID) Object.defineProperty(crypto, 'randomUUID', { value: () => {
@@ -63,16 +69,23 @@ final class WorkbenchController: UIViewController, WKNavigationDelegate, WKScrip
         case "ocr":
             guard let name = fields["name"] as? String, let encoded = fields["data"] as? String else { return fail(id, "无法读取文件。") }
             let language = fields["language"] as? String ?? "ch"
+            let locations = fields["locations"] as? Bool ?? false
             Task { @MainActor in
                 do {
-                    let result = try await Task.detached(priority: .userInitiated) { () -> (String, Int) in
+                    let result = try await Task.detached(priority: .userInitiated) { () -> (String, Int, [LocalDocuments.LocatedText]?) in
                         let local = try Self.temporaryFile(name: name, encoded: encoded)
                         defer { try? FileManager.default.removeItem(at: local.deletingLastPathComponent()) }
+                        if locations && !LocalDocuments.isPDF(local) {
+                            let lines = try LocalDocuments.imageLocations(local, language: language)
+                            return (lines.map(\.text).joined(separator: "\n"), 1, lines)
+                        }
                         let text = try LocalDocuments.recognize([local], language: language)
                         let pages = LocalDocuments.pageCount(local)
-                        return (text, pages)
+                        return (text, pages, nil)
                     }.value
-                    reply(id, value: ["text": result.0, "pages": result.1])
+                    var value: [String: Any] = ["text": result.0, "pages": result.1]
+                    if let lines = result.2 { value["locations"] = lines.map { ["text": $0.text, "box": $0.box] } }
+                    reply(id, value: value)
                 } catch { fail(id, error.localizedDescription) }
             }
         case "list":
@@ -96,6 +109,21 @@ final class WorkbenchController: UIViewController, WKNavigationDelegate, WKScrip
             let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.image], asCopy: true)
             picker.delegate = self
             present(picker, animated: true)
+        case "video":
+            guard !preparingVideo, let name = fields["name"] as? String, let encoded = fields["data"] as? String else { return fail(id, "请先完成当前视频优化。") }
+            preparingVideo = true
+            videoCancelled = false
+            Task { @MainActor in
+                defer { preparingVideo = false; videoExporter = nil }
+                do { reply(id, value: try await encodeWallpaper(name: name, encoded: encoded, low: fields["low"] as? Bool ?? false)) }
+                catch { fail(id, error.localizedDescription) }
+            }
+        case "video-status":
+            reply(id, value: ["state": "optimizing", "progress": Int((videoExporter?.progress ?? 0) * 100)])
+        case "video-cancel":
+            videoCancelled = true
+            videoExporter?.cancelExport()
+            reply(id, value: [:])
         default: fail(id, "不支持的手机操作。")
         }
     }
@@ -140,6 +168,61 @@ final class WorkbenchController: UIViewController, WKNavigationDelegate, WKScrip
     private func saved() -> [Saved] {
         guard let bytes = UserDefaults.standard.data(forKey: "PaperDockDownloads") else { return [] }
         return (try? JSONDecoder().decode([Saved].self, from: bytes)) ?? []
+    }
+
+    private func encodeWallpaper(name: String, encoded: String, low: Bool) async throws -> [String: Any] {
+        let input = try await Task.detached(priority: .userInitiated) { try Self.temporaryFile(name: name, encoded: encoded) }.value
+        defer { try? FileManager.default.removeItem(at: input.deletingLastPathComponent()) }
+        let asset = AVURLAsset(url: input)
+        let duration = try await asset.load(.duration)
+        let sourceTracks = try await asset.loadTracks(withMediaType: .video)
+        guard duration.seconds.isFinite, duration.seconds > 0, duration.seconds <= 300, let track = sourceTracks.first else { throw VideoIssue("请选择 5 分钟以内的兼容视频。") }
+        let sourceSize = try await track.load(.naturalSize)
+        let orientation = try await track.load(.preferredTransform)
+        let nominalFPS = try await track.load(.nominalFrameRate)
+        let bounds = CGRect(origin: .zero, size: sourceSize).applying(orientation).standardized
+        guard bounds.width > 0, bounds.height > 0 else { throw VideoIssue("视频尺寸无效。") }
+        let scale = min(1, (low ? 1280 : 1920) / max(bounds.width, bounds.height), (low ? 720 : 1080) / min(bounds.width, bounds.height))
+        let outputSize = CGSize(width: max(2, floor(bounds.width * scale / 2) * 2), height: max(2, floor(bounds.height * scale / 2) * 2))
+        let fps = min(low ? 24 : 30, max(1, nominalFPS > 0 ? nominalFPS : 30))
+        let composition = AVMutableComposition()
+        guard let outputTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else { throw VideoIssue("无法创建视频副本。") }
+        let time = CMTimeRange(start: .zero, duration: duration)
+        try outputTrack.insertTimeRange(time, of: track, at: .zero)
+        let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: outputTrack)
+        let transform = orientation.concatenating(CGAffineTransform(translationX: -bounds.minX, y: -bounds.minY))
+            .concatenating(CGAffineTransform(scaleX: scale, y: scale))
+        layer.setTransform(transform, at: .zero)
+        let instruction = AVMutableVideoCompositionInstruction()
+        instruction.timeRange = time
+        instruction.layerInstructions = [layer]
+        let video = AVMutableVideoComposition()
+        video.renderSize = outputSize
+        video.frameDuration = CMTime(value: 1000, timescale: CMTimeScale((fps * 1000).rounded()))
+        video.instructions = [instruction]
+        guard !videoCancelled else { throw VideoIssue("已取消视频优化。") }
+        guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else { throw VideoIssue("系统无法优化这个视频。") }
+        let destination = input.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".mp4")
+        exporter.outputURL = destination
+        exporter.outputFileType = .mp4
+        exporter.videoComposition = video
+        exporter.shouldOptimizeForNetworkUse = true
+        videoExporter = exporter
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            exporter.exportAsynchronously { continuation.resume() }
+        }
+        guard exporter.status == .completed else { throw exporter.error ?? VideoIssue("视频优化未完成。") }
+        let output = try Data(contentsOf: destination, options: .mappedIfSafe)
+        guard output.count > 0 && output.count <= 45 * 1024 * 1024 else { throw VideoIssue("优化副本超过 45 MB，请选择更短的视频。") }
+        let originalSize = try input.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        let original: [String: Any] = ["width": Int(bounds.width), "height": Int(bounds.height), "seconds": duration.seconds, "fps": nominalFPS, "bytes": originalSize]
+        let converted: [String: Any] = ["width": Int(outputSize.width), "height": Int(outputSize.height), "seconds": duration.seconds, "fps": fps, "bytes": output.count]
+        return ["data": output.base64EncodedString(), "metadata": ["original": original, "output": converted]]
+    }
+
+    private struct VideoIssue: LocalizedError {
+        let errorDescription: String?
+        init(_ message: String) { errorDescription = message }
     }
 
     private func open(_ record: Saved, share: Bool) throws {

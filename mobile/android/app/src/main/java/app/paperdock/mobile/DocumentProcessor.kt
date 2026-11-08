@@ -22,8 +22,26 @@ import kotlin.coroutines.coroutineContext
 import kotlin.math.roundToInt
 
 internal data class InputDocument(val uri: Uri, val name: String, val pdf: Boolean)
+internal data class LocatedText(val text: String, val box: List<Float>)
 
 internal class DocumentProcessor(private val context: Context) {
+    suspend fun imageLocations(uri: Uri): List<LocatedText> = withContext(Dispatchers.IO) {
+        check(OpenCVUtils.init(context)) { "无法加载 OCR 图像处理组件。" }
+        val recognizer = withContext(NonCancellable) { PaddleOCR.create(context) }
+        try {
+            val bitmap = readImage(uri)
+            try {
+                recognizer.recognize(bitmap).results.map { line ->
+                    val points = line.box.points
+                    LocatedText(line.text, listOf(
+                        points.minOf { it.x } / bitmap.width, points.minOf { it.y } / bitmap.height,
+                        points.maxOf { it.x } / bitmap.width, points.maxOf { it.y } / bitmap.height,
+                    ))
+                }
+            } finally { bitmap.recycle() }
+        } finally { withContext(NonCancellable) { recognizer.release() } }
+    }
+
     suspend fun recognize(input: List<InputDocument>, progress: suspend (Int, Int) -> Unit): String =
         withContext(Dispatchers.IO) {
             check(OpenCVUtils.init(context)) { "无法加载 OCR 图像处理组件。" }

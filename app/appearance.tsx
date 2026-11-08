@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { applyMaterialTheme } from './m3';
+import { API_URL, requestDocument } from './api';
+import { mobileWorkbench } from './platform';
 
 type Theme = { accent: string; radius: number; opacity: number; dim: number; blur: number; style: 'solid' | 'outline' | 'glass'; motion: boolean };
 const defaults: Theme = { accent: '#0b57d0', radius: 20, opacity: 92, dim: 18, blur: 0, style: 'solid', motion: true };
 type Stored = { theme: Theme; media?: Blob; name?: string; videoId?: string };
-const mediaApi = 'http://127.0.0.1:8001/wallpaper/video';
+const mediaApi = '/wallpaper/video';
 type VideoInfo = { id: string; created: string; original: { width: number; height: number; seconds: number; bytes: number }; output: { width: number; height: number; fps: number; bytes: number } };
 type VideoStatus = { state: 'uploading' | 'analyzing' | 'optimizing' | 'done' | 'failed'; progress: number; metadata?: VideoInfo; original?: VideoInfo['original']; output?: VideoInfo['output'] & { estimated_bytes?: number } };
 const bytes = (value: number) => value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(2)} GB` : value >= 1024 ** 2 ? `${(value / 1024 ** 2).toFixed(1)} MB` : `${Math.ceil(value / 1024)} KB`;
@@ -82,7 +84,7 @@ export default function Appearance({ visible, busy, save }: { visible: boolean; 
   const poll = useRef<number | undefined>(undefined);
   const stopPolling = () => { if (poll.current) { window.clearInterval(poll.current); poll.current = undefined; } };
   const refreshVideos = async () => {
-    try { const data = await fetch(`${mediaApi}s`).then(response => response.json()) as { videos: VideoInfo[] }; setVideos(data.videos); } catch { /* Offline manager is optional while backend is starting. */ }
+    try { const response = await requestDocument(`${mediaApi}s`); if (response.ok) setVideos((await response.json() as { videos: VideoInfo[] }).videos); } catch { /* Offline manager is optional while backend is starting. */ }
   };
   useEffect(() => {
     let cancelled = false;
@@ -94,7 +96,24 @@ export default function Appearance({ visible, busy, save }: { visible: boolean; 
     const timer = setTimeout(() => { void storage({ theme, media, name, videoId }).catch(() => setNotice('外观保存失败：本机存储空间可能不足。')); }, 300);
     return () => clearTimeout(timer);
   }, [theme, media, name, videoId, ready]);
-  useEffect(() => { if (videoId) { setUrl(`${mediaApi}/${videoId}`); return; } if (!media) { setUrl(''); return; } const next = URL.createObjectURL(media); setUrl(next); return () => URL.revokeObjectURL(next); }, [media, videoId]);
+  useEffect(() => {
+    if (videoId && !mobileWorkbench) { setUrl(`${API_URL}${mediaApi}/${videoId}`); return; }
+    let current: string | undefined;
+    let stopped = false;
+    const setBlob = (blob: Blob) => {
+      if (stopped) return;
+      current = URL.createObjectURL(blob);
+      setUrl(current);
+    };
+    if (videoId) {
+      void requestDocument(`${mediaApi}/${videoId}`).then(async (response) => {
+        if (response.ok) setBlob(await response.blob());
+        else if (!stopped) setUrl('');
+      }).catch(() => { if (!stopped) setUrl(''); });
+    } else if (media) setBlob(media);
+    else setUrl('');
+    return () => { stopped = true; if (current) URL.revokeObjectURL(current); };
+  }, [media, videoId]);
   useEffect(() => () => abort.current?.abort(), []);
   useEffect(() => { if (visible && ready) void refreshVideos(); }, [visible, ready]);
   useEffect(() => () => stopPolling(), []);
@@ -129,14 +148,14 @@ export default function Appearance({ visible, busy, save }: { visible: boolean; 
     if (!file) return; setLoading(true);
     try {
       if (/\.(mp4|webm)$/i.test(file.name)) {
-        if (file.size > 1024 ** 3) throw Error('视频不能超过 1 GB（1024 MB）。');
+        if (file.size > (mobileWorkbench ? 50 * 1024 ** 2 : 1024 ** 3)) throw Error(mobileWorkbench ? '手机端视频不能超过 50 MB。' : '视频不能超过 1 GB（1024 MB）。');
         const controller = new AbortController(); abort.current = controller;
         const token = crypto.randomUUID().replaceAll('-', '');
         const low = (navigator.hardwareConcurrency || 4) <= 4 || ((navigator as Navigator & { deviceMemory?: number }).deviceMemory || 8) <= 4;
         setProgress({ state: 'uploading', progress: 0 });
-        setNotice('正在上传并本地优化视频。开始文档处理会取消本次优化。');
-        poll.current = window.setInterval(() => { void fetch(`${mediaApi.replace('/video', '')}/status/${token}`).then(response => response.ok ? response.json() : undefined).then(value => { const status = value as VideoStatus | undefined; if (status) setProgress(status); }); }, 500);
-        const response = await fetch(`${mediaApi}?low=${low}&token=${token}`, { method: 'POST', body: file, signal: controller.signal });
+        setNotice('正在本地优化视频。开始文档处理会取消本次优化。');
+        poll.current = window.setInterval(() => { void requestDocument(`/wallpaper/status/${token}`).then(response => response.ok ? response.json() : undefined).then(value => { const status = value as VideoStatus | undefined; if (status) setProgress(status); }).catch(() => {}); }, 800);
+        const response = await requestDocument(`${mediaApi}?low=${low}&token=${token}`, { method: 'POST', body: file, signal: controller.signal });
         const data = await response.json() as { id: string; message: string; detail?: string; metadata?: VideoInfo };
         if (!response.ok) throw Error(data.detail || '视频优化失败。');
         sampleNextVideo.current = true; setMedia(undefined); setVideoId(data.id); setName(file.name); setProgress({ state: 'done', progress: 100, metadata: data.metadata }); setNotice(data.message); await refreshVideos();
@@ -173,7 +192,7 @@ export default function Appearance({ visible, busy, save }: { visible: boolean; 
         <button disabled={!ready || loading} onClick={() => { setTheme(defaults); setMedia(undefined); setVideoId(undefined); setName('未选择壁纸'); setNotice('已恢复默认外观。'); }}>恢复默认</button>
       </div>
       <p className="break-all">当前：{name}</p>
-      <p>图片最大 80 MB；MP4、WebM 视频最大 1 GB（1024 MB），最长 5 分钟。自动生成本地 H.264 静音副本，常规设备最高 1080p / 30 fps，低配置最高 720p / 24 fps，不放大小分辨率。离开窗口或处理文档时暂停背景；不改变原视频。</p>
+      <p>{mobileWorkbench ? '选择手机支持播放的视频，最大 50 MB、最长 5 分钟。系统会生成本地静音副本，退出工作台或处理文档时暂停背景。' : '图片最大 80 MB；MP4、WebM 视频最大 1 GB（1024 MB），最长 5 分钟。自动生成本地 H.264 静音副本，常规设备最高 1080p / 30 fps，低配置最高 720p / 24 fps，不放大小分辨率。离开窗口或处理文档时暂停背景；不改变原视频。'}</p>
       <fieldset disabled={!ready || loading} className="grid gap-5 sm:grid-cols-2">
         <label>按钮配色 <input aria-label="按钮配色" type="color" value={theme.accent} onChange={e => setTheme({ ...theme, accent: e.target.value })} /></label>
         <label>按钮样式 <select value={theme.style} onChange={e => setTheme({ ...theme, style: e.target.value as Theme['style'] })}><option value="solid">实心</option><option value="outline">描边</option><option value="glass">玻璃</option></select></label>
@@ -181,7 +200,7 @@ export default function Appearance({ visible, busy, save }: { visible: boolean; 
         <label><input type="checkbox" checked={theme.motion} onChange={e => setTheme({ ...theme, motion: e.target.checked })} /> 播放视频背景</label>
       </fieldset>
       <div className="flex gap-3 flex-wrap"><button className="md-button md-filled bg-m-primary text-m-on-primary">按钮效果预览</button><button className="md-button md-filled bg-m-primary text-m-on-primary" disabled>不可用状态</button></div>
-      <div className="border-t pt-5 space-y-3"><div className="flex items-center justify-between gap-3"><h3 className="font-semibold">已优化的视频壁纸</h3><button disabled={loading} onClick={() => void refreshVideos()}>刷新</button></div><p>这里显示 PaperDock 生成的本地副本。删除后不可恢复，但原始视频不会被删除；“重新优化”请重新选择原视频，避免反复转码降低画质。</p>{!videos.length && <p>暂无已优化视频。</p>}{videos.map(item => <div key={item.id} className="rounded-xl border p-4"><b>{item.output.width}×{item.output.height} · {item.output.fps.toFixed(0)} fps</b><p>原始：{item.original.width}×{item.original.height} · {duration(item.original.seconds)} · {bytes(item.original.bytes)}；副本占用：{bytes(item.output.bytes)}</p><div className="mt-2 flex gap-3 flex-wrap"><button disabled={loading} onClick={() => picker.current?.click()}>重新导入原视频</button><button disabled={loading} onClick={() => void (async () => { if (!confirm('删除这个优化后的视频副本？原始视频不会被删除。')) return; const response = await fetch(`${mediaApi}/${item.id}`, { method: 'DELETE' }); if (!response.ok) { setNotice('删除失败，请稍后重试。'); return; } if (videoId === item.id) { setVideoId(undefined); setName('未选择壁纸'); } setProgress(undefined); setNotice('已删除优化副本。'); await refreshVideos(); })()}>删除副本</button></div></div>)}</div>
+      <div className="border-t pt-5 space-y-3"><div className="flex items-center justify-between gap-3"><h3 className="font-semibold">已优化的视频壁纸</h3><button disabled={loading} onClick={() => void refreshVideos()}>刷新</button></div><p>这里显示 PaperDock 生成的本地副本。删除后不可恢复，但原始视频不会被删除；“重新优化”请重新选择原视频，避免反复转码降低画质。</p>{!videos.length && <p>暂无已优化视频。</p>}{videos.map(item => <div key={item.id} className="rounded-xl border p-4"><b>{item.output.width}×{item.output.height} · {item.output.fps.toFixed(0)} fps</b><p>原始：{item.original.width}×{item.original.height} · {duration(item.original.seconds)} · {bytes(item.original.bytes)}；副本占用：{bytes(item.output.bytes)}</p><div className="mt-2 flex gap-3 flex-wrap"><button disabled={loading} onClick={() => picker.current?.click()}>重新导入原视频</button><button disabled={loading} onClick={() => void (async () => { if (!confirm('删除这个优化后的视频副本？原始视频不会被删除。')) return; const response = await requestDocument(`${mediaApi}/${item.id}`, { method: 'DELETE' }); if (!response.ok) { setNotice('删除失败，请稍后重试。'); return; } if (videoId === item.id) { setVideoId(undefined); setName('未选择壁纸'); } setProgress(undefined); setNotice('已删除优化副本。'); await refreshVideos(); })()}>删除副本</button></div></div>)}</div>
       <div className="border-t pt-5 space-y-3"><h3 className="font-semibold">导入与分享主题样式</h3><p>主题配置保存配色、圆角、透明度和播放偏好，壁纸文件单独导入。</p><input hidden ref={importPicker} type="file" accept=".json" onChange={e => { void importTheme(e.target.files?.[0]); e.target.value = ''; }} /><div className="flex gap-3"><button disabled={!ready} onClick={() => importPicker.current?.click()}>导入主题配置</button><button disabled={!ready} onClick={() => void save(new Blob([JSON.stringify({ format: 'paperdock-theme', version: 1, theme }, null, 2)], { type: 'application/json' }), '我的主题.paperdock-theme.json')}>导出主题配置</button></div></div>
       <div className="border-t pt-5 space-y-2"><h3 className="font-semibold">寻找壁纸</h3><p>可从 Pexels、Pixabay 下载图片或视频，再通过上方按钮导入；无需 Steam。下载需要联网，导入后可离线使用。</p><p className="select-all">https://www.pexels.com/ · https://pixabay.com/</p><p>Wallpaper Engine 中已有的图片、视频源文件也可导入。场景包、网页脚本及粒子交互不在兼容范围内。</p></div>
     </section>}

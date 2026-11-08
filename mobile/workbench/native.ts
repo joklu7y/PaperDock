@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { jsonResponse } from './response';
+import { jsonResponse } from './response.ts';
 type Reply = { id: string; value?: unknown; error?: string };
 type NativeHost = { postMessage: (message: string) => void };
 
@@ -55,9 +55,11 @@ export function installNativeSaving() {
   window.dispatchEvent(new Event('pywebviewready'));
 }
 
-export async function recognizeOnPhone(file: Blob, name: string, language: string) {
+export type LocatedText = { text: string; box: [number, number, number, number] };
+
+export async function recognizeOnPhone(file: Blob, name: string, language: string, locations = false) {
   if (file.size > 50 * 1024 * 1024) throw new Error('手机端单个文件最大支持 50 MB。');
-  return nativeRequest<{ text: string; pages: number }>('ocr', { name, language, data: await encodeFile(file) });
+  return nativeRequest<{ text: string; pages: number; locations?: LocatedText[] }>('ocr', { name, language, locations, data: await encodeFile(file) });
 }
 
 export async function pickScreenshot(): Promise<Response> {

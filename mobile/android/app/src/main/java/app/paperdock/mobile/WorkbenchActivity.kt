@@ -13,6 +13,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.media3.common.util.UnstableApi
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
@@ -26,9 +27,11 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
+@UnstableApi
 class WorkbenchActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val processor by lazy { DocumentProcessor(applicationContext) }
+    private val wallpaper by lazy { WallpaperEncoder(applicationContext) }
     private lateinit var web: WebView
     private var picker: ValueCallback<Array<Uri>>? = null
     private var screenshot: String? = null
@@ -90,6 +93,9 @@ class WorkbenchActivity : Activity() {
                         "list" -> reply(id, downloads())
                         "open" -> { open(message); reply(id, JSONObject()) }
                         "screenshot" -> chooseScreenshot(id)
+                        "video" -> encodeWallpaper(id, message)
+                        "video-status" -> reply(id, JSONObject().put("state", "optimizing").put("progress", wallpaper.progress()))
+                        "video-cancel" -> { wallpaper.cancel(); reply(id, JSONObject()) }
                         else -> error("不支持的手机操作。")
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }
@@ -109,6 +115,11 @@ class WorkbenchActivity : Activity() {
         val pdf = name.endsWith(".pdf", ignoreCase = true)
         val file = cacheInput(message, if (pdf) ".pdf" else ".image")
         try {
+            if (!pdf && message.optBoolean("locations")) {
+                val lines = processor.imageLocations(Uri.fromFile(file))
+                return@withContext JSONObject().put("pages", 1).put("text", lines.joinToString("\n") { it.text })
+                    .put("locations", JSONArray(lines.map { line -> JSONObject().put("text", line.text).put("box", JSONArray(line.box)) }))
+            }
             var pages = 1
             val text = processor.recognize(listOf(InputDocument(Uri.fromFile(file), name, pdf))) { _, total -> pages = total }
             JSONObject().put("text", text).put("pages", pages)
@@ -123,6 +134,21 @@ class WorkbenchActivity : Activity() {
             file.writeBytes(Base64.decode(encoded, Base64.DEFAULT))
             return file
         } catch (failure: Exception) { file.delete(); throw failure }
+    }
+
+    private suspend fun encodeWallpaper(id: String, message: JSONObject) {
+        val input = withContext(Dispatchers.IO) { cacheInput(message, ".video") }
+        val output = File.createTempFile("paperdock-wallpaper-", ".mp4", cacheDir)
+        output.delete()
+        try {
+            val metadata = wallpaper.encode(input, output, message.optBoolean("low"))
+            val data = withContext(Dispatchers.IO) {
+                require(output.length() in 1..(45L * 1024 * 1024)) { "优化副本超过 45 MB，请选择更短的视频。" }
+                Base64.encodeToString(output.readBytes(), Base64.NO_WRAP)
+            }
+            reply(id, JSONObject().put("data", data).put("metadata", metadata))
+        } catch (cancelled: CancellationException) { reply(id, error = "已取消视频优化。") }
+        finally { input.delete(); output.delete() }
     }
 
     private suspend fun save(id: String, message: JSONObject) {

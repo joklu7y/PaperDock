@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { Font, Image, Matrix, type PDFAnnotationType, type PDFDocument, type PDFPage, type Point, type Quad, type Rect } from 'mupdf';
-import { bytesOf, fileResponse, formFile, formText, withPdf } from './pdf';
-import { jsonResponse } from './response';
+import { bytesOf, fileResponse, formFile, formText, withPdf } from './pdf.ts';
+import { jsonResponse } from './response.ts';
 
 const MARKS: Record<string, PDFAnnotationType> = {
   highlight: 'Highlight', underline: 'Underline', strike: 'StrikeOut', squiggly: 'Squiggly',
@@ -77,7 +77,7 @@ export async function editAnnotations(action: string, form: FormData): Promise<R
             annotations.push({
               page: index, xref: object.asIndirect(), type: annotation.getType(), content: annotation.getContents(),
               category: object.get('Subj').asString() || '未分类', status: tagged ? author.slice(STATUS_PREFIX.length) : '待处理',
-              author: tagged ? '' : author, rect: annotation.getRect(),
+              author: tagged ? '' : author, rect: annotation.getBounds(),
             });
           }
         });

@@ -12,12 +12,17 @@ final class LocalDocumentsTests: XCTestCase {
         controller.loadViewIfNeeded()
         defer { controller.detach() }
         let view = try XCTUnwrap(controller.view as? WKWebView)
+        var loaded = false
         for _ in 0..<20 {
             let ready = try? await view.evaluateJavaScript("!!document.querySelector('.pd-mobile') && document.body.innerText.includes('今天想处理什么文档')") as? Bool
-            if ready == true { return }
+            if ready == true { loaded = true; break }
             try await Task.sleep(nanoseconds: 500_000_000)
         }
-        XCTFail("The offline PaperDock workbench did not load in WKWebView.")
+        XCTAssertTrue(loaded, "The offline PaperDock workbench did not load in WKWebView.")
+        let assets = try XCTUnwrap(Bundle.main.resourceURL?.appendingPathComponent("workbench/assets"))
+        let wasm = try XCTUnwrap(FileManager.default.contentsOfDirectory(atPath: assets.path).first { $0.hasSuffix(".wasm") })
+        let result = try await view.callAsyncJavaScript("const response = await fetch(path); return WebAssembly.validate(await response.arrayBuffer());", arguments: ["path": "./assets/\(wasm)"], in: nil, contentWorld: .page)
+        XCTAssertEqual(result as? Bool, true, "The offline PDF engine must be readable inside WKWebView.")
     }
 
     func testSearchablePDFUsesTextLayer() throws {

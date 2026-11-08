@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { ColorSpace, Matrix, type PDFPage } from 'mupdf';
 import { strToU8, zipSync, type Zippable } from 'fflate';
-import { fileResponse, withPdf } from './pdf';
-import { recognizeOnPhone } from './native';
+import { fileResponse, withPdf } from './pdf.ts';
+import { recognizeOnPhone } from './native.ts';
 
 const xml = (text: string) => text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '').replace(/[<>&"']/g, (char) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[char]!);
 const header = '<?xml version="1.0" encoding="UTF-8"?>';
@@ -117,7 +117,7 @@ export async function convertPdf(file: File, target: string, language: string, s
           });
         } else {
           pages.push(await pageText(page, language));
-          if (target === 'pptx' || target === 'layout-docx') visual.push(renderPng(page));
+          if (target === 'pptx') visual.push(renderPng(page));
         }
       } finally { page.destroy(); }
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -145,21 +145,9 @@ export async function convertPdf(file: File, target: string, language: string, s
       if (!(data instanceof Blob)) throw new Error('无法生成幻灯片。');
       return fileResponse(data, 'slides.pptx', MIME.pptx);
     }
-    if (target === 'layout-docx') {
-      const { Document, Packer, Paragraph, ImageRun } = await import('docx');
-      const sections = visual.map(({ png, width, height }, index) => {
-        const ratio = Math.min(600 / width, 780 / height);
-        return { children: [new Paragraph({ children: [new ImageRun({ data: png, type: 'png', transformation: { width: width * ratio, height: height * ratio } })] }),
-          ...pages[index].split('\n').filter(Boolean).map((line) => new Paragraph(line))] };
-      });
-      const response = fileResponse(await Packer.toBlob(new Document({ sections })), 'layout.docx', MIME.docx);
-      response.headers.set('X-PaperDock-Conversion-Mode', 'page-images');
-      return response;
-    }
     if (!text) throw new Error('没有提取到可导出的文字。');
     if (target === 'epub') return fileResponse(packageEpub(pages), 'document.epub', MIME.epub);
     if (target === 'odt') return fileResponse(packageOdt(pages), 'document.odt', MIME.odt);
-    if (target === 'md') return fileResponse(new Blob([pages.map((page, i) => `## 第 ${i + 1} 页\n\n${page}`).join('\n\n')], { type: MIME.md }), 'document.md', MIME.md);
     if (target === 'txt' || target === 'docx' || target === 'xlsx') return fileResponse(await textFile(text, target), `converted.${target}`, MIME[target]);
     throw new Error('不支持所选格式。');
   });
