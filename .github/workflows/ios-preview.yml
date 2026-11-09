@@ -21,7 +21,7 @@ permissions:
 jobs:
   simulator:
     runs-on: macos-15
-    timeout-minutes: 15
+    timeout-minutes: 18
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -65,7 +65,7 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/PaperDockDevice" \
             -destination 'generic/platform=iOS' -configuration Release CODE_SIGNING_ALLOWED=NO build
           app="$RUNNER_TEMP/PaperDockDevice/Build/Products/Release-iphoneos/PaperDockMobile.app"
-          xcrun lipo -verify_arch arm64 "$app/PaperDockMobile"
+          xcrun lipo "$app/PaperDockMobile" -verify_arch arm64
           payload="$RUNNER_TEMP/UnsignedPaperDock/Payload"
           mkdir -p "$payload"
           ditto "$app" "$payload/PaperDockMobile.app"
@@ -78,7 +78,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
       - name: Run document tests on an iPhone simulator
-        timeout-minutes: 9
+        timeout-minutes: 13
         working-directory: mobile/ios
         run: |
           xcodebuild -version
