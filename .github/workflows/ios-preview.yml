@@ -57,23 +57,6 @@ jobs:
           cp "$archive" "$cache/https___github_com_yeatse_opencv_spm_releases_download_4_12_0_opencv2_xcframework_zip"
           xcodebuild -resolvePackageDependencies -project PaperDockMobile.xcodeproj \
             -scheme PaperDockMobile -clonedSourcePackagesDirPath "$RUNNER_TEMP/PaperDockPackages"
-      - name: Run document tests on an iPhone simulator
-        working-directory: mobile/ios
-        run: |
-          xcodebuild -version
-          device_id=$(xcrun simctl list devices available -j | python3 -c '
-          import json, sys
-          runtimes = json.load(sys.stdin)["devices"]
-          for runtime in reversed(list(runtimes)):
-              for device in runtimes[runtime]:
-                  if device["name"].startswith("iPhone"):
-                      print(device["udid"])
-                      sys.exit(0)
-          sys.exit("No iPhone simulator available")
-          ')
-          xcodebuild -project PaperDockMobile.xcodeproj -scheme PaperDockMobile \
-            -clonedSourcePackagesDirPath "$RUNNER_TEMP/PaperDockPackages" -disableAutomaticPackageResolution \
-            -destination "id=$device_id" -parallel-testing-enabled NO ONLY_ACTIVE_ARCH=YES test
       - name: Build the unsigned iPhone app
         working-directory: mobile/ios
         run: |
@@ -94,3 +77,21 @@ jobs:
           path: ${{ runner.temp }}/PaperDock-iPhone-unsigned.ipa
           if-no-files-found: error
           retention-days: 1
+      - name: Run document tests on an iPhone simulator
+        timeout-minutes: 9
+        working-directory: mobile/ios
+        run: |
+          xcodebuild -version
+          device_id=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          for runtime in reversed(list(runtimes)):
+              for device in runtimes[runtime]:
+                  if device["name"].startswith("iPhone"):
+                      print(device["udid"])
+                      sys.exit(0)
+          sys.exit("No iPhone simulator available")
+          ')
+          xcodebuild -project PaperDockMobile.xcodeproj -scheme PaperDockMobile \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/PaperDockPackages" -disableAutomaticPackageResolution \
+            -destination "id=$device_id" -parallel-testing-enabled NO ONLY_ACTIVE_ARCH=YES -test-timeouts-enabled YES -default-test-execution-time-allowance 120 test
