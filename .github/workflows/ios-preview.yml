@@ -37,13 +37,21 @@ jobs:
             --assets mobile/ios/PaperDockMobile/Models
       - name: Resolve Swift packages before building
         working-directory: mobile/ios
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          # The release page redirect can fail on CI. Fetch the same pinned asset via the API.
+          # Authenticate the API request to avoid shared runner rate limits.
           archive="$RUNNER_TEMP/opencv2.xcframework.zip"
-          curl --fail --location --retry 2 --max-time 180 \
+          checksum=13409e99956a74aaee1856c56889c211116fbc8be2bcbe373986ec9e10f536fc
+          if ! curl --fail --location --retry 2 --max-time 180 \
+            -H "Authorization: Bearer $GH_TOKEN" \
             -H 'Accept: application/octet-stream' \
-            'https://api.github.com/repos/yeatse/opencv-spm/releases/assets/275558406' -o "$archive"
-          echo "13409e99956a74aaee1856c56889c211116fbc8be2bcbe373986ec9e10f536fc  $archive" | shasum -a 256 -c -
+            'https://api.github.com/repos/yeatse/opencv-spm/releases/assets/275558406' -o "$archive" ||
+            ! shasum -a 256 -c - <<< "$checksum  $archive"; then
+            curl --fail --location --retry 2 --max-time 180 \
+              'https://github.com/yeatse/opencv-spm/releases/download/4.12.0/opencv2.xcframework.zip' -o "$archive"
+          fi
+          shasum -a 256 -c - <<< "$checksum  $archive"
           cache="$HOME/Library/Caches/org.swift.swiftpm/artifacts"
           mkdir -p "$cache"
           cp "$archive" "$cache/https___github_com_yeatse_opencv_spm_releases_download_4_12_0_opencv2_xcframework_zip"
@@ -71,4 +79,18 @@ jobs:
         run: |
           xcodebuild -project PaperDockMobile.xcodeproj -scheme PaperDockMobile \
             -clonedSourcePackagesDirPath "$RUNNER_TEMP/PaperDockPackages" -disableAutomaticPackageResolution \
+            -derivedDataPath "$RUNNER_TEMP/PaperDockDevice" \
             -destination 'generic/platform=iOS' -configuration Release CODE_SIGNING_ALLOWED=NO build
+          app="$RUNNER_TEMP/PaperDockDevice/Build/Products/Release-iphoneos/PaperDockMobile.app"
+          xcrun lipo -verify_arch arm64 "$app/PaperDockMobile"
+          payload="$RUNNER_TEMP/UnsignedPaperDock/Payload"
+          mkdir -p "$payload"
+          ditto "$app" "$payload/PaperDockMobile.app"
+          ditto -c -k --norsrc --keepParent "$payload" "$RUNNER_TEMP/PaperDock-iPhone-unsigned.ipa"
+      - name: Preserve the unsigned build for signing
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: PaperDock-iPhone-unsigned
+          path: ${{ runner.temp }}/PaperDock-iPhone-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 1
