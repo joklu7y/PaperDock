@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowRightLeft, ClipboardList, Download, ExternalLink, FileDown, FolderOpen, GitCompareArrows, House, LayoutGrid,
-  Info, Menu, Palette, PenLine, ScanText, Search, ShieldCheck, Table2, X, type LucideIcon,
+  Menu, Palette, PenLine, ScanText, Search, ShieldCheck, Table2, X, type LucideIcon,
 } from 'lucide-react';
 import Appearance from './appearance';
 import { WorkbenchContext, filenameOf, readError, requestDocument, type Workbench } from './api';
 import { mobileWorkbench } from './platform';
-import { Button, Card, Empty, IconButton, LinearProgress, PageHeader } from './ui';
+import { Button, Card, Empty, IconButton, LinearProgress, MaterialIcon, PageHeader } from './ui';
 import OcrView from './views/ocr';
 import TablesView from './views/tables';
 import PagesView from './views/pages';
@@ -26,21 +26,26 @@ declare global {
 }
 
 type ViewId = 'home' | 'ocr' | 'tables' | 'pages' | 'annotate' | 'forms' | 'compare' | 'convert' | 'security' | 'downloads' | 'appearance';
-type Destination = { id: ViewId; label: string; icon: LucideIcon; description: string; keywords: string };
+type Destination = { id: ViewId; label: string; icon: LucideIcon; symbol: string; description: string; keywords: string };
 const tools: Destination[] = [
-  { id: 'ocr', label: '文字识别', icon: ScanText, description: '图片、扫描件、截图转可编辑文字', keywords: 'ocr 识别 扫描 手写 截图 文字' },
-  { id: 'tables', label: '表格与版面', icon: Table2, description: '表格转 Excel，双栏/图文混排还原 Word', keywords: '表格 excel csv 版面 双栏 多栏 页眉 页脚 markdown' },
-  { id: 'pages', label: '页面整理', icon: LayoutGrid, description: '拖拽排序、旋转、删除、合并、拆分、水印', keywords: '页面 排序 拖拽 旋转 删除 合并 拆分 提取 水印 裁切 空白页' },
-  { id: 'annotate', label: '批注与签名', icon: PenLine, description: '高亮、便签、画笔，按类别/状态管理；手写签名', keywords: '批注 高亮 下划线 删除线 便签 画笔 签名 注释' },
-  { id: 'forms', label: '填写表单', icon: ClipboardList, description: '填写 PDF 中的表单字段并可扁平化', keywords: '表单 填写 扁平化 问卷' },
-  { id: 'compare', label: '文档对比', icon: GitCompareArrows, description: '两个版本逐字比对，生成并排对比 PDF', keywords: '对比 比较 差异 版本 校对' },
-  { id: 'convert', label: '格式转换', icon: ArrowRightLeft, description: '图片/截图转 PDF；PDF 转 Word、PPT、EPUB 等', keywords: '转换 word ppt pptx odt epub markdown txt 图片 截图 pdf' },
-  { id: 'security', label: '安全与修复', icon: ShieldCheck, description: '加密、权限、永久涂黑、清理元数据、修复', keywords: '密码 加密 权限 涂黑 脱敏 元数据 修复 损坏' },
+  { id: 'ocr', label: '文字识别', icon: ScanText, symbol: 'text_snippet', description: '图片、扫描件、截图转可编辑文字', keywords: 'ocr 识别 扫描 手写 截图 文字' },
+  { id: 'tables', label: '表格与版面', icon: Table2, symbol: 'table_chart', description: '表格转 Excel，双栏/图文混排还原 Word', keywords: '表格 excel csv 版面 双栏 多栏 页眉 页脚 markdown' },
+  { id: 'pages', label: '页面整理', icon: LayoutGrid, symbol: 'grid_view', description: '拖拽排序、旋转、删除、合并、拆分、水印', keywords: '页面 排序 拖拽 旋转 删除 合并 拆分 提取 水印 裁切 空白页' },
+  { id: 'annotate', label: '批注与签名', icon: PenLine, symbol: 'edit', description: '高亮、便签、画笔，按类别/状态管理；手写签名', keywords: '批注 高亮 下划线 删除线 便签 画笔 签名 注释' },
+  { id: 'forms', label: '填写表单', icon: ClipboardList, symbol: 'format_list_bulleted', description: '填写 PDF 中的表单字段并可扁平化', keywords: '表单 填写 扁平化 问卷' },
+  { id: 'compare', label: '文档对比', icon: GitCompareArrows, symbol: 'compare', description: '两个版本逐字比对，生成并排对比 PDF', keywords: '对比 比较 差异 版本 校对' },
+  { id: 'convert', label: '格式转换', icon: ArrowRightLeft, symbol: 'swap_horiz', description: '图片/截图转 PDF；PDF 转 Word、PPT、EPUB 等', keywords: '转换 word ppt pptx odt epub markdown txt 图片 截图 pdf' },
+  { id: 'security', label: '安全与修复', icon: ShieldCheck, symbol: 'security', description: '加密、权限、永久涂黑、清理元数据、修复', keywords: '密码 加密 权限 涂黑 脱敏 元数据 修复 损坏' },
 ];
 const extras: Destination[] = [
-  { id: 'downloads', label: '下载记录', icon: Download, description: '', keywords: '下载 保存 记录' },
-  { id: 'appearance', label: '外观设置', icon: Palette, description: '', keywords: '外观 主题 壁纸 颜色' },
+  { id: 'downloads', label: '下载记录', icon: Download, symbol: 'download', description: '', keywords: '下载 保存 记录' },
+  { id: 'appearance', label: '外观设置', icon: Palette, symbol: 'settings', description: '', keywords: '外观 主题 壁纸 颜色' },
 ];
+const mobileDestinations = [
+  { id: 'home', label: '工具', symbol: 'apps' },
+  tools[0],
+  extras[0],
+] as const;
 
 export default function Home() {
   const [view, setView] = useState<ViewId>('home');
@@ -86,6 +91,7 @@ export default function Home() {
       if (event.key === '/' && !typing) { event.preventDefault(); searchBox.current?.focus(); }
       if (event.key === 'Escape') {
         setQuery('');
+        if (mobileWorkbench) searchBox.current?.blur();
         if (mobileWorkbench && matchMedia('(max-width: 767px)').matches) setDrawer(false);
       }
     };
@@ -156,6 +162,7 @@ export default function Home() {
     setView(id);
     if (id !== 'ocr') setOcrStarted(false);
     setQuery('');
+    if (mobileWorkbench) searchBox.current?.blur();
     if (mobileWorkbench && matchMedia('(max-width: 767px)').matches) setDrawer(false);
     window.scrollTo({ top: 0 });
   };
@@ -166,25 +173,27 @@ export default function Home() {
 
   const navItem = (d: Destination, badge?: ReactNode) => (
     <button key={d.id} type="button" onClick={() => go(d.id)} aria-current={view === d.id ? 'page' : undefined}
-      className={`flex h-12 w-full items-center gap-3 rounded-full px-4 text-sm transition-colors ${view === d.id ? 'bg-m-secondary-container font-medium text-m-on-secondary-container' : 'text-m-on-surface-variant hover:bg-m-on-surface/8'}`}>
-      <d.icon size={20} />
+      className={`md-state-layer flex h-12 w-full items-center gap-3 rounded-full px-4 text-sm transition-colors ${view === d.id ? 'bg-m-secondary-container font-medium text-m-on-secondary-container' : 'text-m-on-surface-variant hover:bg-m-on-surface/8'}`}>
+      {mobileWorkbench ? <MaterialIcon name={d.symbol} /> : <d.icon size={20} />}
       <span className="flex-1 text-left">{d.label}</span>
       {badge}
     </button>
   );
 
   const homeView = (
-    <div className="md-view">
+    <div className="md-view pd-home">
       <div className="md-header mb-8 mt-2">
-        <h2 className="text-[32px] font-normal leading-10 text-m-on-surface">今天想处理什么文档？</h2>
-        <p className="mt-2 text-m-on-surface-variant">{mobileWorkbench ? '文档在手机上离线处理。' : <>所有处理都在本机完成。按 <kbd className="rounded border border-m-outline-variant px-1.5 text-xs">/</kbd> 可以快速搜索工具。</>}</p>
+        <h2 className="text-[32px] font-normal leading-10 text-m-on-surface">{mobileWorkbench ? '文档工具' : '今天想处理什么文档？'}</h2>
+        {!mobileWorkbench && <p className="mt-2 text-m-on-surface-variant">所有处理都在本机完成。按 <kbd className="rounded border border-m-outline-variant px-1.5 text-xs">/</kbd> 可以快速搜索工具。</p>}
       </div>
       <div className="pd-tool-list grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {tools.map((t) => (
-          <button key={t.id} type="button" onClick={() => go(t.id)} className="md-card group flex flex-col items-start rounded-[24px] bg-m-surface-container-lowest p-5 text-left transition-all hover:-translate-y-0.5 hover:shadow-lg">
-            <span className="grid size-12 place-items-center rounded-2xl bg-m-primary-container text-m-on-primary-container transition-transform group-hover:scale-105"><t.icon size={24} /></span>
-            <span className="mt-4 font-medium text-m-on-surface">{t.label}</span>
-            <span className="mt-1 text-sm leading-5 text-m-on-surface-variant">{t.description}</span>
+          <button key={t.id} type="button" onClick={() => go(t.id)} className={mobileWorkbench ? 'pd-tool-row md-state-layer' : 'md-card group flex flex-col items-start rounded-[24px] bg-m-surface-container-lowest p-5 text-left transition-all hover:-translate-y-0.5 hover:shadow-lg'}>
+            <span className={mobileWorkbench ? 'pd-tool-icon' : 'grid size-12 place-items-center rounded-2xl bg-m-primary-container text-m-on-primary-container transition-transform group-hover:scale-105'}>
+              {mobileWorkbench && t.id !== 'ocr' ? <MaterialIcon name={t.symbol} /> : <t.icon size={24} aria-hidden="true" />}
+            </span>
+            <span className={mobileWorkbench ? 'pd-tool-label' : 'mt-4 font-medium text-m-on-surface'}>{t.label}</span>
+            {mobileWorkbench ? t.id === 'ocr' && <MaterialIcon name="arrow_forward" className="pd-tool-arrow" /> : <span className="mt-1 text-sm leading-5 text-m-on-surface-variant">{t.description}</span>}
           </button>
         ))}
       </div>
@@ -198,7 +207,7 @@ export default function Home() {
 
   const downloadsView = (
     <div className="md-view mx-auto max-w-4xl">
-      <PageHeader title="下载记录" subtitle={mobileWorkbench ? '最近 200 条成功保存记录可在重启后查看。' : '桌面版保留最近 200 条成功保存记录，重启后仍可查看。'} />
+      <PageHeader title="下载记录" subtitle="桌面版保留最近 200 条成功保存记录，重启后仍可查看。" />
       <Card>
         {downloads.length ? (
           <ul className="divide-y divide-m-outline-variant">
@@ -211,7 +220,7 @@ export default function Home() {
               </li>
             ))}
           </ul>
-        ) : <Empty icon={Download} title="暂无保存记录">处理完成后会弹出保存位置选择窗口。</Empty>}
+        ) : <Empty icon={Download} title="暂无保存记录">{!mobileWorkbench && '处理完成后会弹出保存位置选择窗口。'}</Empty>}
       </Card>
     </div>
   );
@@ -224,38 +233,39 @@ export default function Home() {
 
   return (
     <WorkbenchContext.Provider value={workbench}>
-      <main className={`pd-app min-h-screen bg-m-surface text-m-on-surface${mobileWorkbench ? ' pd-mobile' : ''}`}>
+      <main className={`pd-app min-h-screen bg-m-surface text-m-on-surface${mobileWorkbench ? ' pd-mobile' : ''}`}
+        onPointerDown={(event) => { if (mobileWorkbench && query && event.target instanceof Element && !event.target.closest('.pd-search')) setQuery(''); }}>
         <header className="pd-topbar md-surface sticky top-0 z-30 flex h-16 items-center gap-2 bg-m-surface px-2 sm:px-4">
-          <IconButton icon={Menu} label="展开或收起导航" aria-controls="workbench-navigation" aria-expanded={drawer} onClick={() => setDrawer((open) => !open)} />
+          <IconButton icon={Menu} symbol="menu" label="展开或收起导航" aria-controls="workbench-navigation" aria-expanded={drawer} onClick={() => setDrawer((open) => !open)} />
           <button type="button" onClick={() => go('home')} className="pd-brand flex items-center gap-2 rounded-full px-2 py-1">
             <span className="grid size-9 place-items-center rounded-xl bg-m-primary text-m-on-primary"><ScanText size={20} /></span>
             <span className="hidden text-[22px] text-m-on-surface sm:inline">PaperDock</span>
           </button>
           <div className="pd-search relative mx-auto w-full max-w-[720px]">
-            <Search size={20} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-m-on-surface-variant" />
+            {mobileWorkbench ? <MaterialIcon name="search" className="pd-search-icon" /> : <Search size={20} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-m-on-surface-variant" />}
             <input ref={searchBox} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && matches[0]) go(matches[0].id); }}
-              placeholder={mobileWorkbench ? '搜索拆分、签名、表格等工具' : '搜索工具，例如“拆分”“签名”“表格”'} aria-label="搜索工具"
+              placeholder={mobileWorkbench ? '搜索工具' : '搜索工具，例如“拆分”“签名”“表格”'} aria-label="搜索工具"
               className="h-12 w-full rounded-full bg-m-surface-container-high pl-12 pr-12 text-[15px] text-m-on-surface outline-none transition-shadow placeholder:text-m-on-surface-variant focus:bg-m-surface-container-lowest focus:shadow-md" />
-            {query && <IconButton icon={X} label="清除搜索" className="absolute right-1 top-1/2 -translate-y-1/2" onClick={() => setQuery('')} />}
+            {query && <IconButton icon={X} symbol="close" label="清除搜索" className="absolute right-1 top-1/2 -translate-y-1/2" onClick={() => { setQuery(''); if (mobileWorkbench) searchBox.current?.focus(); }} />}
             {query.trim() && (
-              <div className="absolute inset-x-0 top-14 overflow-hidden rounded-3xl bg-m-surface-container-lowest py-2 shadow-xl">
+              <div className="pd-search-results absolute inset-x-0 top-14 overflow-hidden rounded-3xl bg-m-surface-container-lowest py-2 shadow-xl">
                 {matches.length ? matches.map((d) => (
-                  <button key={d.id} type="button" onClick={() => go(d.id)} className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-m-on-surface/8">
-                    <d.icon size={20} className="text-m-on-surface-variant" /><span className="text-sm text-m-on-surface">{d.label}</span><span className="truncate text-xs text-m-on-surface-variant">{d.description}</span>
+                  <button key={d.id} type="button" onClick={() => go(d.id)} className="md-state-layer flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-m-on-surface/8">
+                    {mobileWorkbench ? <MaterialIcon name={d.symbol} /> : <d.icon size={20} className="text-m-on-surface-variant" />}<span className="text-sm text-m-on-surface">{d.label}</span>{!mobileWorkbench && <span className="truncate text-xs text-m-on-surface-variant">{d.description}</span>}
                   </button>
                 )) : <p className="px-5 py-3 text-sm text-m-on-surface-variant">没有找到相关工具</p>}
               </div>
             )}
           </div>
-          <IconButton icon={Download} label={`下载记录（${downloads.length}）`} onClick={() => go('downloads')} active={view === 'downloads'} />
-          <IconButton icon={Palette} label="外观设置" onClick={() => go('appearance')} active={view === 'appearance'} />
+          <IconButton icon={Download} symbol="download" className="pd-top-download" label={`下载记录（${downloads.length}）`} onClick={() => go('downloads')} active={view === 'downloads'} />
+          <IconButton icon={Palette} symbol="settings" label="外观设置" onClick={() => go('appearance')} active={view === 'appearance'} />
           {task && <div className="absolute inset-x-0 bottom-0"><LinearProgress /></div>}
         </header>
         <div className="flex">
           {mobileWorkbench && drawer && <button type="button" className="pd-drawer-backdrop" aria-label="关闭导航" onClick={() => setDrawer(false)} />}
-          <nav id="workbench-navigation" data-open={drawer} className={`pd-navigation md-surface sticky top-16 h-[calc(100vh-4rem)] shrink-0 overflow-y-auto bg-m-surface px-3 pb-6 transition-all ${drawer ? 'w-64' : 'w-0 overflow-hidden px-0'}`} aria-label="主导航">
-            {mobileWorkbench && <div className="pd-drawer-title"><span>PaperDock</span><IconButton icon={X} label="收起导航" onClick={() => setDrawer(false)} /></div>}
-            {navItem({ id: 'home', label: '首页', icon: House, description: '', keywords: '' })}
+          <nav id="workbench-navigation" data-open={drawer} inert={mobileWorkbench && !drawer} className={`pd-navigation md-surface sticky top-16 h-[calc(100vh-4rem)] shrink-0 overflow-y-auto bg-m-surface px-3 pb-6 transition-all ${drawer ? 'w-64' : 'w-0 overflow-hidden px-0'}`} aria-label="主导航">
+            {mobileWorkbench && <div className="pd-drawer-title"><span>PaperDock</span><IconButton icon={X} symbol="close" label="收起导航" onClick={() => setDrawer(false)} /></div>}
+            {navItem({ id: 'home', label: '首页', icon: House, symbol: 'apps', description: '', keywords: '' })}
             <p className="px-4 pb-1 pt-4 text-xs font-medium text-m-on-surface-variant">工具</p>
             {tools.map((t) => navItem(t))}
             <div className="my-3 h-px bg-m-outline-variant" />
@@ -267,6 +277,17 @@ export default function Home() {
             {views[view]}
           </section>
         </div>
+        {mobileWorkbench && (
+          <nav className="pd-bottom-nav" aria-label="快捷导航">
+            {mobileDestinations.map((d) => (
+              <button key={d.id} type="button" className="pd-nav-destination" onClick={() => go(d.id)}
+                aria-current={view === d.id || (d.id === 'home' && tools.some((tool) => tool.id === view && view !== 'ocr')) ? 'page' : undefined}>
+                <span className="pd-nav-indicator"><MaterialIcon name={d.symbol} /></span>
+                <span>{d.label}</span>
+              </button>
+            ))}
+          </nav>
+        )}
         {(toast || task || showOcrReminder) && (
           <div className="pd-notice-stack pointer-events-none fixed bottom-6 left-1/2 z-50 flex w-[min(560px,calc(100vw-32px))] -translate-x-1/2 flex-col gap-2">
             {task && (
@@ -282,8 +303,8 @@ export default function Home() {
               </div>
             )}
             {showOcrReminder && (
-              <p className="md-snackbar flex w-fit max-w-full items-center gap-2 rounded-full bg-m-secondary-container px-4 py-2.5 text-sm font-medium text-m-on-secondary-container shadow-sm" role="status">
-                <Info size={18} className="shrink-0" aria-hidden="true" />
+              <p className="pd-ocr-reminder md-snackbar flex w-fit max-w-full items-center gap-2 px-4 py-3 text-sm font-medium" role="status">
+                <MaterialIcon name="info" />
                 <span>识别可能有误，请仔细甄别</span>
               </p>
             )}

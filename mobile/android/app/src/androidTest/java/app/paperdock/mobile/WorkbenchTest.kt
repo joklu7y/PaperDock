@@ -36,8 +36,8 @@ class WorkbenchTest {
                 }
                 return false
             }
-            assertTrue("Expected the desktop-style workbench to load from the APK's local assets",
-                eventually("!!document.querySelector('.pd-mobile') && document.body.innerText.includes('今天想处理什么文档')"))
+            assertTrue("Expected the phone workbench to load from the APK's local assets",
+                eventually("document.querySelector('.pd-mobile .pd-home h2')?.textContent === '文档工具'"))
             val wasm = activity.assets.list("workbench/assets")?.firstOrNull { it.endsWith(".wasm") }
             assertNotNull("Expected the offline PDF engine in the APK", wasm)
             script("fetch('./assets/$wasm').then(r=>r.arrayBuffer()).then(b=>{window.paperdockWasmLoaded=WebAssembly.validate(b)}).catch(()=>{window.paperdockWasmLoaded=false});void 0")
@@ -63,7 +63,7 @@ class WorkbenchTest {
                 });
                 void 0;
             """.trimIndent())
-            val start = "Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim() === '开始识别')"
+            val start = "Array.from(document.querySelectorAll('button')).find(button => button.textContent.trim().endsWith('开始识别'))"
             assertTrue("Expected a queued image to enable OCR", eventually("$start?.disabled === false"))
             val fits = "document.documentElement.scrollWidth <= document.documentElement.clientWidth && visualViewport.scale === window.ocrInitialScale"
             assertTrue("A long filename must fit before recognition", eventually(fits))

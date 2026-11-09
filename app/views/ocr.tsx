@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Camera, FileDown, FolderOpen, Play, RotateCcw, Save, ScanText, Square, Trash2 } from 'lucide-react';
-import { errorMessage, fileSize, readError, requestDocument, useWorkbench } from '../api';
+import { errorMessage, fileSize, formOf, readError, requestDocument, useWorkbench, type RenderedPage } from '../api';
 import { mobileWorkbench } from '../platform';
-import { Button, Card, Chip, DropZone, Empty, LinearProgress, PageHeader } from '../ui';
+import { BottomSheet, Button, Card, Chip, DropZone, Empty, LinearProgress, MaterialIcon, PageHeader } from '../ui';
 
 type OcrLine = { text: string; score: number; page: number };
 type OcrItem = { lines?: OcrLine[]; filename: string; text: string; pages: number; job_id: string };
@@ -13,6 +13,11 @@ type QueueFile = { source: File; status: string; recognized?: OcrItem };
 type RecentRun = { name: string; pages: number; at: string };
 const LIMIT = 10;
 const OCR_TYPES = '.pdf,.jpg,.jpeg,.png,.bmp,.tif,.tiff';
+const EXPORT_FORMATS = [
+  { id: 'docx', label: 'Word 文档', extension: '.docx' },
+  { id: 'xlsx', label: 'Excel 表格', extension: '.xlsx' },
+  { id: 'txt', label: '纯文本', extension: '.txt' },
+] as const;
 
 export default function OcrView({ onRecognitionStart }: { onRecognitionStart?: () => void } = {}) {
   const { notify, saveBlob, post } = useWorkbench();
@@ -26,8 +31,18 @@ export default function OcrView({ onRecognitionStart }: { onRecognitionStart?: (
   const [recent, setRecent] = useState<RecentRun[]>([]);
   const [previewUrl, setPreviewUrl] = useState('');
   const [saving, setSaving] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const stop = useRef(false);
   const projectPicker = useRef<HTMLInputElement>(null);
+  const reviewCard = useRef<HTMLDivElement>(null);
+  const revealReview = useRef(false);
+
+  useEffect(() => {
+    if (!revealReview.current || running || !result) return;
+    revealReview.current = false;
+    reviewCard.current?.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
+  }, [result, running]);
 
   const selectedJob = result?.items?.[reviewIndex]?.job_id;
   const selectedSource = selectedJob ? queue.find((item) => item.recognized?.job_id === selectedJob)?.source : undefined;
@@ -108,6 +123,8 @@ export default function OcrView({ onRecognitionStart }: { onRecognitionStart?: (
       const response = await requestDocument('/ocr/combine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }) });
       const data = (await response.json()) as OcrResult & { detail?: unknown };
       if (!response.ok) throw new Error(errorMessage(data.detail, '合并导出失败'));
+      revealReview.current = mobileWorkbench;
+      setShowOriginal(false);
       setResult(data);
       setDraft(items[0].text);
       const nextRecent = [{ name: data.filename || '批量识别', pages: data.pages, at: new Date().toLocaleString() }, ...recent].slice(0, 5);
@@ -155,6 +172,7 @@ export default function OcrView({ onRecognitionStart }: { onRecognitionStart?: (
         if (!response.ok) throw new Error('恢复导出文件失败');
         setResult(await response.json());
       } else setResult(null);
+      setShowOriginal(false);
       setDraft(data.draft);
       setReviewIndex(Number(data.reviewIndex) || 0);
       if (['auto', 'handwriting', 'english'].includes(data.settings?.ocrMode)) setMode(data.settings.ocrMode);
@@ -165,24 +183,29 @@ export default function OcrView({ onRecognitionStart }: { onRecognitionStart?: (
 
   const items = result?.items || [];
   const lowConfidence = (items[reviewIndex]?.lines || []).filter((line) => line.score < 0.85);
+  const original = previewUrl
+    ? selectedSource?.name.toLowerCase().endsWith('.pdf')
+      ? <iframe title="PDF 原文件对照" src={previewUrl} className="h-[600px] w-full rounded-xl" />
+      : <img alt="当前校对文件原图" src={previewUrl} className="max-h-[800px] w-full rounded-xl object-contain" />
+    : <p className="text-sm text-m-on-surface-variant">打开工程后需要重新添加原文件才能对照原图。</p>;
   return (
     <div className="md-view">
       <PageHeader
-        title="文字识别 OCR"
-        subtitle={mobileWorkbench ? '图片、扫描件转可编辑文字，文件只在这台设备上处理。' : '图片、扫描件转可编辑文字；文件只在这台电脑上处理。'}
+        title={mobileWorkbench ? '文字识别' : '文字识别 OCR'}
+        subtitle="图片、扫描件转可编辑文字；文件只在这台电脑上处理。"
         actions={<>
           <input ref={projectPicker} type="file" accept=".json" hidden onChange={(event) => { void openProject(event.target.files?.[0]); event.target.value = ''; }} />
-          <Button variant="outlined" icon={FolderOpen} onClick={() => projectPicker.current?.click()}>打开工程</Button>
-          <Button variant="tonal" icon={Save} onClick={() => void saveProject()}>保存工程</Button>
+          <Button variant={mobileWorkbench ? 'text' : 'outlined'} icon={FolderOpen} symbol="folder_open" onClick={() => projectPicker.current?.click()}>打开工程</Button>
+          <Button variant={mobileWorkbench ? 'text' : 'tonal'} icon={Save} onClick={() => void saveProject()}>保存工程</Button>
         </>}
       />
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="space-y-6">
-          <Card>
-            <DropZone files={[]} onFiles={addFiles} accept={OCR_TYPES} multiple label={mobileWorkbench ? '选择 PDF 或图片' : '拖入或点击选择 PDF / 图片'} hint={`支持 PDF、JPG、PNG、BMP、TIF。${mobileWorkbench ? '' : '也可以直接 Ctrl+V 粘贴截图。'}队列最多 ${LIMIT} 个。`} />
+          <Card className="pd-ocr-import">
+            <DropZone files={[]} onFiles={addFiles} accept={OCR_TYPES} multiple label={mobileWorkbench ? '选择 PDF 或图片' : '拖入或点击选择 PDF / 图片'} hint={`支持 PDF、JPG、PNG、BMP、TIF。也可以直接 Ctrl+V 粘贴截图。队列最多 ${LIMIT} 个。`} />
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              <Button variant="outlined" icon={Camera} onClick={() => void snip()} disabled={running}>{mobileWorkbench ? '导入截图' : '截图识别'}</Button>
-              <span className="ml-auto text-sm text-m-on-surface-variant">{queue.length}/{LIMIT} 个文件</span>
+              <Button variant={mobileWorkbench ? 'text' : 'outlined'} icon={Camera} symbol="photo_library" onClick={() => void snip()} disabled={running}>{mobileWorkbench ? '导入截图' : '截图识别'}</Button>
+              {(!mobileWorkbench || queue.length > 0) && <span className="ml-auto text-sm tabular-nums text-m-on-surface-variant">{queue.length}/{LIMIT} 个文件</span>}
               {queue.length > 0 && <Button variant="text" icon={Trash2} disabled={running} onClick={() => setQueue([])}>清空</Button>}
             </div>
             {queue.length > 0 && (
@@ -194,16 +217,16 @@ export default function OcrView({ onRecognitionStart }: { onRecognitionStart?: (
                       <p className="truncate text-sm text-m-on-surface">{item.source.name}</p>
                       <p className="text-xs text-m-on-surface-variant">{fileSize(item.source.size)}</p>
                     </div>
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs ${item.recognized ? 'bg-m-tertiary-container text-m-on-tertiary-container' : item.status.startsWith('失败') ? 'bg-m-error-container text-m-on-error-container' : 'bg-m-surface-container-high text-m-on-surface-variant'}`}>{item.status}</span>
+                    <span className={mobileWorkbench ? `shrink-0 text-sm ${item.status.startsWith('失败') ? 'text-m-error' : 'text-m-on-surface-variant'}` : `rounded-full px-2.5 py-0.5 text-xs ${item.recognized ? 'bg-m-tertiary-container text-m-on-tertiary-container' : item.status.startsWith('失败') ? 'bg-m-error-container text-m-on-error-container' : 'bg-m-surface-container-high text-m-on-surface-variant'}`}>{item.status}</span>
                     <button type="button" disabled={running} aria-label={`移除 ${item.source.name}`} onClick={() => setQueue((old) => old.filter((_, i) => i !== index))} className="grid size-8 place-items-center rounded-full text-m-on-surface-variant hover:bg-m-on-surface/8 disabled:opacity-40"><Trash2 size={16} /></button>
                   </li>
                 ))}
               </ul>
             )}
           </Card>
-          {result && (
+          {result && !mobileWorkbench && (
             <Card title={<span className="[overflow-wrap:anywhere]">原文件对照 · {items[reviewIndex]?.filename || ''}</span>}>
-              {previewUrl ? (selectedSource?.name.toLowerCase().endsWith('.pdf') ? <iframe title="PDF 原文件对照" src={previewUrl} className="h-[600px] w-full rounded-xl" /> : <img alt="当前校对文件原图" src={previewUrl} className="max-h-[800px] w-full rounded-xl object-contain" />) : <p className="text-sm text-m-on-surface-variant">打开工程后需要重新添加原文件才能对照原图。</p>}
+              {original}
             </Card>
           )}
         </div>
@@ -212,7 +235,7 @@ export default function OcrView({ onRecognitionStart }: { onRecognitionStart?: (
             <div className="flex flex-wrap gap-2">
               {([['auto', '自动（中英）'], ['handwriting', '手写优先'], ['english', '英文优先']] as const).map(([value, label]) => <Chip key={value} selected={mode === value} onClick={() => setMode(value)}>{label}</Chip>)}
             </div>
-            <p className="mt-3 text-xs leading-5 text-m-on-surface-variant">已自动扶正、去噪并整理阅读顺序。手写内容建议识别后人工校对。</p>
+            {!mobileWorkbench && <p className="mt-3 text-xs leading-5 text-m-on-surface-variant">已自动扶正、去噪并整理阅读顺序。手写内容建议识别后人工校对。</p>}
             {running ? (
               <div className="mt-5 space-y-3" role="status">
                 <LinearProgress value={(progress.completed / (progress.total || 1)) * 100} />
@@ -221,30 +244,48 @@ export default function OcrView({ onRecognitionStart }: { onRecognitionStart?: (
               </div>
             ) : (
               <div className="mt-5 flex flex-wrap gap-2">
-                <Button variant="filled" icon={Play} onClick={() => void run()} disabled={!queue.length}>开始识别</Button>
+                <Button variant="filled" icon={Play} symbol="play_arrow" onClick={() => void run()} disabled={!queue.length}>开始识别</Button>
                 {queue.some((f) => !f.recognized) && queue.some((f) => f.recognized) && <Button variant="outlined" icon={RotateCcw} onClick={() => void run(true)}>只重试未完成</Button>}
               </div>
             )}
           </Card>
           {result ? (
-            <Card title="人工校对" subtitle={`${result.pages} 页 · 修改后可重新导出`}>
-              {items.length > 1 && (
-                <select className="md-input mb-3 max-w-full" value={reviewIndex} onChange={(event) => { const index = Number(event.target.value); setReviewIndex(index); setDraft(items[index]?.text || ''); }}>
-                  {items.map((item, index) => <option key={`${item.job_id}-${index}`} value={index}>{index + 1}. {item.filename}（{item.pages} 页）</option>)}
-                </select>
-              )}
-              <textarea className="md-input h-96" value={draft} onChange={(event) => { const text = event.target.value; setDraft(text); setResult((old) => (old ? { ...old, items: old.items?.map((item, i) => (i === reviewIndex ? { ...item, text } : item)) } : old)); }} />
-              {lowConfidence.length > 0 && (
-                <details className="mt-3 rounded-xl bg-m-tertiary-container/50 p-3 text-sm">
-                  <summary className="cursor-pointer text-m-on-surface">低置信度的行（{lowConfidence.length} 处），建议重点核对</summary>
-                  {lowConfidence.map((line, index) => <p key={index} className="mt-2 text-m-on-surface-variant">第 {line.page} 页 · {Math.round(line.score * 100)}%：{line.text}</p>)}
-                </details>
-              )}
-              <div className="mt-4 flex flex-wrap gap-2">
-                {(['docx', 'xlsx', 'txt'] as const).map((format) => <Button key={format} variant={format === 'docx' ? 'filled' : 'tonal'} icon={FileDown} loading={saving && format === 'docx'} onClick={() => void saveCorrection(format)}>{format.toUpperCase()}</Button>)}
-              </div>
-            </Card>
-          ) : (
+            <div ref={reviewCard} className="pd-ocr-review">
+              <Card title="人工校对" subtitle={mobileWorkbench ? `${result.pages} 页` : `${result.pages} 页 · 修改后可重新导出`}>
+                {items.length > 1 && (
+                  <select className="md-input mb-3 max-w-full" aria-label="选择校对文件" value={reviewIndex} onChange={(event) => { const index = Number(event.target.value); setReviewIndex(index); setDraft(items[index]?.text || ''); }}>
+                    {items.map((item, index) => <option key={`${item.job_id}-${index}`} value={index}>{index + 1}. {item.filename}（{item.pages} 页）</option>)}
+                  </select>
+                )}
+                {mobileWorkbench && (
+                  <div className="pd-review-switch" role="group" aria-label="校对视图">
+                    <button type="button" className="md-state-layer" aria-pressed={!showOriginal} onClick={() => setShowOriginal(false)}><MaterialIcon name={!showOriginal ? 'check' : 'edit'} />校对文字</button>
+                    <button type="button" className="md-state-layer" aria-pressed={showOriginal} onClick={() => setShowOriginal(true)}><MaterialIcon name={showOriginal ? 'check' : 'description'} />查看原件</button>
+                  </div>
+                )}
+                {mobileWorkbench && showOriginal ? (
+                  <div className="pd-ocr-original">
+                    {selectedSource?.name.toLowerCase().endsWith('.pdf')
+                      ? <PdfReview key={selectedJob} file={selectedSource} />
+                      : original}
+                  </div>
+                ) : (
+                  <textarea className="md-input h-96" aria-label="识别结果" rows={mobileWorkbench ? 6 : undefined} value={draft} onChange={(event) => { const text = event.target.value; setDraft(text); setResult((old) => (old ? { ...old, items: old.items?.map((item, i) => (i === reviewIndex ? { ...item, text } : item)) } : old)); }} />
+                )}
+                {lowConfidence.length > 0 && !showOriginal && (
+                  <details className="mt-3 rounded-xl bg-m-tertiary-container/50 p-3 text-sm">
+                    <summary className="cursor-pointer text-m-on-surface">低置信度的行（{lowConfidence.length} 处），建议重点核对</summary>
+                    {lowConfidence.map((line, index) => <p key={index} className="mt-2 text-m-on-surface-variant">第 {line.page} 页 · {Math.round(line.score * 100)}%：{line.text}</p>)}
+                  </details>
+                )}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {mobileWorkbench ? (
+                    <Button variant="filled" icon={FileDown} symbol="download" loading={saving} aria-haspopup="dialog" onClick={() => setExportOpen(true)}>导出结果</Button>
+                  ) : EXPORT_FORMATS.map(({ id }) => <Button key={id} variant={id === 'docx' ? 'filled' : 'tonal'} icon={FileDown} loading={saving && id === 'docx'} onClick={() => void saveCorrection(id)}>{id.toUpperCase()}</Button>)}
+                </div>
+              </Card>
+            </div>
+          ) : !mobileWorkbench && (
             <Card><Empty icon={ScanText} title="识别结果会显示在这里">添加文件后点击“开始识别”。</Empty></Card>
           )}
           {recent.length > 0 && (
@@ -254,6 +295,60 @@ export default function OcrView({ onRecognitionStart }: { onRecognitionStart?: (
           )}
         </div>
       </div>
+      {mobileWorkbench && (
+        <BottomSheet title="导出结果" open={exportOpen} onClose={() => setExportOpen(false)}>
+          {EXPORT_FORMATS.map(({ id, label, extension }) => (
+            <button key={id} type="button" className="pd-sheet-option md-state-layer" onClick={() => { setExportOpen(false); void saveCorrection(id); }}>
+              <MaterialIcon name={id === 'xlsx' ? 'table_chart' : 'description'} />
+              <span>{label}</span>
+              <span>{extension}</span>
+            </button>
+          ))}
+        </BottomSheet>
+      )}
+    </div>
+  );
+}
+
+type PdfPreview = { count: number; pages: RenderedPage[] };
+
+function PdfReview({ file }: { file: File }) {
+  const [page, setPage] = useState(1);
+  const [preview, setPreview] = useState<PdfPreview>();
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setPreview(undefined);
+    setError('');
+    void requestDocument('/pdf/render', {
+      method: 'POST',
+      body: formOf({ file, pages: String(page), scale: '1.25' }),
+      signal: controller.signal,
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(await readError(response, '原件预览失败'));
+      const rendered = (await response.json()) as PdfPreview;
+      if (!rendered.pages[0]?.image) throw new Error('这一页无法预览');
+      if (!controller.signal.aborted) setPreview(rendered);
+    }).catch((reason) => {
+      if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : '原件预览失败');
+    });
+    return () => controller.abort();
+  }, [file, page]);
+
+  const image = preview?.pages[0]?.image;
+  return (
+    <div className="w-full p-2">
+      {image ? <img src={image} alt={`第 ${page} 页原件`} className="w-full object-contain" /> : (
+        <p className="text-center text-sm text-m-on-surface-variant" role="status">{error || '正在加载原件'}</p>
+      )}
+      {preview && preview.count > 1 && (
+        <div className="flex items-center justify-between">
+          <Button variant="text" disabled={page === 1} onClick={() => setPage(page - 1)}>上一页</Button>
+          <span className="text-sm tabular-nums">{page} / {preview.count}</span>
+          <Button variant="text" disabled={page === preview.count} onClick={() => setPage(page + 1)}>下一页</Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -58,14 +58,14 @@ export default function ConvertView() {
   return (
     <div className="md-view mx-auto max-w-5xl">
       <PageHeader title="格式转换" subtitle="图片和截图转 PDF；PDF 导出为 Office、电子书、Markdown 等格式。" />
-      <Card title="图片 / 截图 → PDF" subtitle={mobileWorkbench ? '最多 10 张，按列表顺序成页。' : '最多 10 张，按列表顺序成页；可 Ctrl+V 粘贴截图'}>
+      <Card title="图片 / 截图 → PDF" subtitle={mobileWorkbench ? undefined : '最多 10 张，按列表顺序成页；可 Ctrl+V 粘贴截图'}>
         <DropZone files={images} onFiles={setImages} accept=".png,.jpg,.jpeg,.bmp,.tif,.tiff" multiple label="选择图片" compact />
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           <Button variant="outlined" icon={Camera} disabled={busy} onClick={() => void snip()}>{mobileWorkbench ? '导入截图' : '截取屏幕'}</Button>
           <Button variant="filled" icon={FileImage} disabled={!images.length || busy} onClick={async () => { await saveResponse(await post('/convert', formOf({ files: images, target: 'pdf' }), '正在生成 PDF'), 'converted.pdf'); }}>生成 PDF</Button>
         </div>
       </Card>
-      <Card className="mt-6" title="PDF → 其他格式" subtitle="扫描件会自动使用 OCR（首次较慢）">
+      <Card className="mt-6" title="PDF → 其他格式" subtitle={mobileWorkbench ? undefined : '扫描件会自动使用 OCR（首次较慢）'}>
         <DropZone files={pdf} onFiles={setPdf} accept=".pdf" label="选择 PDF" compact />
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {fromPdf.map((t) => <ToolButton key={t.id} icon={t.icon} title={t.title} description={t.description} loading={running === t.id} disabled={busy} onClick={() => void convert(t)} />)}

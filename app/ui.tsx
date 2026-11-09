@@ -1,14 +1,20 @@
 'use client';
 
-import { useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react';
+import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react';
 import { FileText, Upload, X, type LucideIcon } from 'lucide-react';
 import { fileSize } from './api';
+import { mobileWorkbench } from './platform';
 
 // Material 3 building blocks styled after Google's own apps.
+
+export function MaterialIcon({ name, className = '' }: { name: string; className?: string }) {
+  return <span aria-hidden="true" className={`pd-symbol ${className}`}>{name}</span>;
+}
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: 'filled' | 'tonal' | 'outlined' | 'text' | 'danger';
   icon?: LucideIcon;
+  symbol?: string;
   loading?: boolean;
 };
 
@@ -20,30 +26,31 @@ const variants = {
   danger: 'bg-m-error text-m-on-error hover:shadow-md',
 };
 
-export function Button({ variant = 'tonal', icon: Icon, loading, children, className = '', disabled, ...props }: ButtonProps) {
+export function Button({ variant = 'tonal', icon: Icon, symbol, loading, children, className = '', disabled, ...props }: ButtonProps) {
   return (
     <button
       type="button"
       disabled={disabled || loading}
-      className={`md-button inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-full px-6 text-sm font-medium tracking-[.01em] transition-all disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none ${variants[variant]} ${className}`}
+      data-variant={variant}
+      className={`md-button md-state-layer inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-full px-6 text-sm font-medium tracking-[.01em] transition-all disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none ${variants[variant]} ${className}`}
       {...props}
     >
-      {loading ? <span className="md-spinner" aria-hidden /> : Icon && <Icon size={18} />}
+      {loading ? <span className="md-spinner" aria-hidden /> : mobileWorkbench && symbol ? <MaterialIcon name={symbol} /> : Icon && <Icon size={18} />}
       {children}
     </button>
   );
 }
 
-export function IconButton({ icon: Icon, label, className = '', active, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { icon: LucideIcon; label: string; active?: boolean }) {
+export function IconButton({ icon: Icon, symbol, label, className = '', active, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { icon: LucideIcon; symbol?: string; label: string; active?: boolean }) {
   return (
     <button
       type="button"
       aria-label={label}
       title={label}
-      className={`grid size-10 shrink-0 place-items-center rounded-full transition-colors disabled:opacity-40 ${active ? 'bg-m-secondary-container text-m-on-secondary-container' : 'text-m-on-surface-variant hover:bg-m-on-surface/8'} ${className}`}
+      className={`md-state-layer grid size-10 shrink-0 place-items-center rounded-full transition-colors disabled:opacity-40 ${active ? 'bg-m-secondary-container text-m-on-secondary-container' : 'text-m-on-surface-variant hover:bg-m-on-surface/8'} ${className}`}
       {...props}
     >
-      <Icon size={20} />
+      {mobileWorkbench && symbol ? <MaterialIcon name={symbol} /> : <Icon size={20} />}
     </button>
   );
 }
@@ -65,12 +72,13 @@ export function Card({ children, className = '', title, subtitle, actions }: { c
   );
 }
 
-export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
+export function PageHeader({ title, subtitle, detail, actions }: { title: string; subtitle?: string; detail?: string; actions?: ReactNode }) {
+  const supportingText = detail ?? (mobileWorkbench ? undefined : subtitle);
   return (
     <div className="md-header mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>
         <h2 className="text-[28px] font-normal leading-9 text-m-on-surface">{title}</h2>
-        {subtitle && <p className="mt-1 text-sm text-m-on-surface-variant">{subtitle}</p>}
+        {supportingText && <p className="mt-1 break-words text-sm text-m-on-surface-variant">{supportingText}</p>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
     </div>
@@ -102,7 +110,7 @@ export function Chip({ selected, children, onClick, icon: Icon }: { selected?: b
       type="button"
       onClick={onClick}
       aria-pressed={selected}
-      className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-sm transition-colors ${selected ? 'border-transparent bg-m-secondary-container text-m-on-secondary-container' : 'border-m-outline-variant text-m-on-surface-variant hover:bg-m-on-surface/8'}`}
+      className={`md-chip md-state-layer inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-sm transition-colors ${selected ? 'border-transparent bg-m-secondary-container text-m-on-secondary-container' : 'border-m-outline-variant text-m-on-surface-variant hover:bg-m-on-surface/8'}`}
     >
       {Icon && <Icon size={16} />}
       {children}
@@ -159,11 +167,12 @@ export function DropZone({ files, onFiles, accept, multiple = false, max = 10, l
         onDragOver={(event) => { event.preventDefault(); setOver(true); }}
         onDragLeave={() => setOver(false)}
         onDrop={(event) => { event.preventDefault(); setOver(false); add(event.dataTransfer.files); }}
-        className={`flex w-full flex-col items-center justify-center rounded-[20px] border-2 border-dashed text-center transition-colors ${compact ? 'gap-1 py-6' : 'gap-2 py-10'} ${over ? 'border-m-primary bg-m-primary-container/40' : 'border-m-outline-variant bg-m-surface-container-low hover:bg-m-surface-container'}`}
+        className={`md-drop-zone md-state-layer flex w-full flex-col items-center justify-center rounded-[20px] border-2 border-dashed text-center transition-colors ${compact ? 'gap-1 py-6' : 'gap-2 py-10'} ${over ? 'border-m-primary bg-m-primary-container/40' : 'border-m-outline-variant bg-m-surface-container-low hover:bg-m-surface-container'}`}
+        data-drag-over={over}
       >
-        <span className="grid size-12 place-items-center rounded-full bg-m-primary-container text-m-on-primary-container"><Upload size={22} /></span>
-        <span className="mt-1 font-medium text-m-on-surface">{label}</span>
-        {hint && <span className="px-4 text-xs text-m-on-surface-variant">{hint}</span>}
+        <span className="md-drop-icon grid size-12 place-items-center rounded-full bg-m-primary-container text-m-on-primary-container">{mobileWorkbench ? <MaterialIcon name="upload_file" /> : <Upload size={22} aria-hidden="true" />}</span>
+        <span className="md-drop-label mt-1 font-medium text-m-on-surface">{label}</span>
+        {hint && !mobileWorkbench && <span className="px-4 text-xs text-m-on-surface-variant">{hint}</span>}
         <input ref={picker} type="file" hidden multiple={multiple} accept={accept} onChange={(event) => { add(event.target.files); event.target.value = ''; }} />
       </button>
       {files.length > 0 && (
@@ -184,11 +193,11 @@ export function DropZone({ files, onFiles, accept, multiple = false, max = 10, l
 
 export function ToolButton({ icon: Icon, title, description, onClick, disabled, loading }: { icon: LucideIcon; title: string; description?: string; onClick: () => void; disabled?: boolean; loading?: boolean }) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled || loading} className="group flex items-start gap-3 rounded-2xl border border-m-outline-variant bg-m-surface-container-lowest p-4 text-left transition-all hover:border-transparent hover:bg-m-surface-container-low hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50">
-      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-m-secondary-container text-m-on-secondary-container">{loading ? <span className="md-spinner" /> : <Icon size={20} />}</span>
+    <button type="button" onClick={onClick} disabled={disabled || loading} className="md-tool-button md-state-layer group flex items-start gap-3 rounded-2xl border border-m-outline-variant bg-m-surface-container-lowest p-4 text-left transition-all hover:border-transparent hover:bg-m-surface-container-low hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50">
+      <span className="md-tool-icon grid size-10 shrink-0 place-items-center rounded-xl bg-m-secondary-container text-m-on-secondary-container">{loading ? <span className="md-spinner" /> : <Icon size={20} />}</span>
       <span className="min-w-0">
         <span className="block text-sm font-medium text-m-on-surface">{title}</span>
-        {description && <span className="mt-0.5 block text-xs leading-5 text-m-on-surface-variant">{description}</span>}
+        {description && !mobileWorkbench && <span className="mt-0.5 block text-xs leading-5 text-m-on-surface-variant">{description}</span>}
       </span>
     </button>
   );
@@ -204,5 +213,26 @@ export function Dialog({ open, title, children, actions, onClose }: { open: bool
         {actions && <div className="mt-6 flex justify-end gap-2">{actions}</div>}
       </div>
     </div>
+  );
+}
+
+export function BottomSheet({ open, title, children, onClose }: { open: boolean; title: string; children: ReactNode; onClose: () => void }) {
+  const sheet = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  useEffect(() => {
+    const element = sheet.current;
+    if (open && element && !element.open) element.showModal();
+    if (!open && element?.open) element.close();
+  }, [open]);
+  return (
+    <dialog ref={sheet} aria-labelledby={titleId} className="pd-sheet" onClose={onClose} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="pd-sheet-panel">
+        <div className="pd-sheet-heading">
+          <h3 id={titleId}>{title}</h3>
+          <IconButton icon={X} symbol="close" label="关闭" onClick={onClose} />
+        </div>
+        {children}
+      </div>
+    </dialog>
   );
 }

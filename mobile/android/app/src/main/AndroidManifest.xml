@@ -3,7 +3,7 @@
         android:allowBackup="false"
         android:icon="@mipmap/paperdock_launcher"
         android:label="PaperDock"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        android:theme="@style/PaperDockTheme">
         <activity
             android:name=".WorkbenchActivity"
             android:configChanges="orientation|screenSize"

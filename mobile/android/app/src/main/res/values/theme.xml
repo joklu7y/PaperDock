@@ -1,0 +1,9 @@
+<resources>
+    <style name="PaperDockTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#F8FAFD</item>
+        <item name="android:statusBarColor">#F8FAFD</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">#F0F4F9</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>

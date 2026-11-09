@@ -6,7 +6,7 @@ import { API_URL, requestDocument } from './api';
 import { mobileWorkbench } from './platform';
 
 type Theme = { accent: string; radius: number; opacity: number; dim: number; blur: number; style: 'solid' | 'outline' | 'glass'; motion: boolean };
-const defaults: Theme = { accent: '#0b57d0', radius: 20, opacity: 92, dim: 18, blur: 0, style: 'solid', motion: true };
+const defaults: Theme = { accent: '#0b57d0', radius: mobileWorkbench ? 24 : 20, opacity: 92, dim: 18, blur: 0, style: 'solid', motion: true };
 type Stored = { theme: Theme; media?: Blob; name?: string; videoId?: string };
 const mediaApi = '/wallpaper/video';
 type VideoInfo = { id: string; created: string; original: { width: number; height: number; seconds: number; bytes: number }; output: { width: number; height: number; fps: number; bytes: number } };
@@ -76,7 +76,7 @@ export default function Appearance({ visible, busy, save }: { visible: boolean; 
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<VideoStatus>();
   const [videos, setVideos] = useState<VideoInfo[]>([]);
-  const [notice, setNotice] = useState('设置自动保存在本机。');
+  const [notice, setNotice] = useState(mobileWorkbench ? '' : '设置自动保存在本机。');
   const [focused, setFocused] = useState(true);
   const video = useRef<HTMLVideoElement>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -126,7 +126,7 @@ export default function Appearance({ visible, busy, save }: { visible: boolean; 
     root.style.setProperty('--pd-on-accent', rgb[0] * .2126 + rgb[1] * .7152 + rgb[2] * .0722 > .179 ? '#101820' : '#ffffff');
     root.style.setProperty('--pd-radius', `${theme.radius}px`);
     root.style.setProperty('--pd-opacity', `${theme.opacity}%`);
-    applyMaterialTheme(theme.accent, root);
+    applyMaterialTheme(theme.accent, root, mobileWorkbench);
     return () => { delete root.dataset.paperTheme; };
   }, [theme]);
   useEffect(() => {
@@ -181,8 +181,8 @@ export default function Appearance({ visible, busy, save }: { visible: boolean; 
       <div style={{ background: `rgba(0,0,0,${theme.dim / 100})` }} />
     </div>}
     {visible && <section className="pd-settings md-card space-y-6 rounded-[24px] bg-m-surface-container-lowest p-6">
-      <div><h2 className="text-[28px] text-m-on-surface">你的工作台，你的风格</h2><p className="mt-2">导入壁纸，自动搭配按钮；也可以调整成你喜欢的样子。</p></div>
-      <p role="status">{notice}</p>
+      <div><h2 className="text-[28px] text-m-on-surface">{mobileWorkbench ? '外观设置' : '你的工作台，你的风格'}</h2>{!mobileWorkbench && <p className="mt-2">导入壁纸，自动搭配按钮；也可以调整成你喜欢的样子。</p>}</div>
+      {notice && <p role="status">{notice}</p>}
       {progress && <div className="rounded-xl border p-4 space-y-2" aria-live="polite"><div className="flex justify-between gap-3"><b>{progress.state === 'uploading' ? '正在上传' : progress.state === 'analyzing' ? '正在分析视频' : progress.state === 'optimizing' ? '正在优化播放' : progress.state === 'done' ? '优化完成' : '优化未完成'}</b><span>{progress.progress}%</span></div><div className="h-2 overflow-hidden rounded bg-slate-200"><div className="h-full bg-m-primary transition-all" style={{ width: `${progress.progress}%` }} /></div>{progress.original && progress.output && <p>原视频：{progress.original.width}×{progress.original.height} · {duration(progress.original.seconds)} · {bytes(progress.original.bytes)}<br />目标输出：{progress.output.width}×{progress.output.height} · {progress.output.fps.toFixed(0)} fps · 预计不超过 {bytes(progress.output.estimated_bytes || progress.output.bytes)}</p>}{progress.metadata && <p>实际副本占用：{bytes(progress.metadata.output.bytes)}</p>}</div>}
       <div className="flex flex-wrap gap-3">
         <input ref={picker} hidden type="file" accept=".jpg,.jpeg,.png,.webp,.mp4,.webm" onChange={e => { void upload(e.target.files?.[0]); e.target.value = ''; }} />
@@ -191,8 +191,8 @@ export default function Appearance({ visible, busy, save }: { visible: boolean; 
         <button disabled={!ready || loading} onClick={() => { setMedia(undefined); setVideoId(undefined); setName('未选择壁纸'); }}>清除背景</button>
         <button disabled={!ready || loading} onClick={() => { setTheme(defaults); setMedia(undefined); setVideoId(undefined); setName('未选择壁纸'); setNotice('已恢复默认外观。'); }}>恢复默认</button>
       </div>
-      <p className="break-all">当前：{name}</p>
-      <p>{mobileWorkbench ? '选择手机支持播放的视频，最大 50 MB、最长 5 分钟。系统会生成本地静音副本，退出工作台或处理文档时暂停背景。' : '图片最大 80 MB；MP4、WebM 视频最大 1 GB（1024 MB），最长 5 分钟。自动生成本地 H.264 静音副本，常规设备最高 1080p / 30 fps，低配置最高 720p / 24 fps，不放大小分辨率。离开窗口或处理文档时暂停背景；不改变原视频。'}</p>
+      {(!mobileWorkbench || media || videoId) && <p className="break-all">当前：{name}</p>}
+      <p>{mobileWorkbench ? '视频最多 50 MB、5 分钟' : '图片最大 80 MB；MP4、WebM 视频最大 1 GB（1024 MB），最长 5 分钟。自动生成本地 H.264 静音副本，常规设备最高 1080p / 30 fps，低配置最高 720p / 24 fps，不放大小分辨率。离开窗口或处理文档时暂停背景；不改变原视频。'}</p>
       <fieldset disabled={!ready || loading} className="grid gap-5 sm:grid-cols-2">
         <label>按钮配色 <input aria-label="按钮配色" type="color" value={theme.accent} onChange={e => setTheme({ ...theme, accent: e.target.value })} /></label>
         <label>按钮样式 <select value={theme.style} onChange={e => setTheme({ ...theme, style: e.target.value as Theme['style'] })}><option value="solid">实心</option><option value="outline">描边</option><option value="glass">玻璃</option></select></label>
@@ -201,7 +201,7 @@ export default function Appearance({ visible, busy, save }: { visible: boolean; 
       </fieldset>
       <div className="flex gap-3 flex-wrap"><button className="md-button md-filled bg-m-primary text-m-on-primary">按钮效果预览</button><button className="md-button md-filled bg-m-primary text-m-on-primary" disabled>不可用状态</button></div>
       <div className="border-t pt-5 space-y-3"><div className="flex items-center justify-between gap-3"><h3 className="font-semibold">已优化的视频壁纸</h3><button disabled={loading} onClick={() => void refreshVideos()}>刷新</button></div><p>这里显示 PaperDock 生成的本地副本。删除后不可恢复，但原始视频不会被删除；“重新优化”请重新选择原视频，避免反复转码降低画质。</p>{!videos.length && <p>暂无已优化视频。</p>}{videos.map(item => <div key={item.id} className="rounded-xl border p-4"><b>{item.output.width}×{item.output.height} · {item.output.fps.toFixed(0)} fps</b><p>原始：{item.original.width}×{item.original.height} · {duration(item.original.seconds)} · {bytes(item.original.bytes)}；副本占用：{bytes(item.output.bytes)}</p><div className="mt-2 flex gap-3 flex-wrap"><button disabled={loading} onClick={() => picker.current?.click()}>重新导入原视频</button><button disabled={loading} onClick={() => void (async () => { if (!confirm('删除这个优化后的视频副本？原始视频不会被删除。')) return; const response = await requestDocument(`${mediaApi}/${item.id}`, { method: 'DELETE' }); if (!response.ok) { setNotice('删除失败，请稍后重试。'); return; } if (videoId === item.id) { setVideoId(undefined); setName('未选择壁纸'); } setProgress(undefined); setNotice('已删除优化副本。'); await refreshVideos(); })()}>删除副本</button></div></div>)}</div>
-      <div className="border-t pt-5 space-y-3"><h3 className="font-semibold">导入与分享主题样式</h3><p>主题配置保存配色、圆角、透明度和播放偏好，壁纸文件单独导入。</p><input hidden ref={importPicker} type="file" accept=".json" onChange={e => { void importTheme(e.target.files?.[0]); e.target.value = ''; }} /><div className="flex gap-3"><button disabled={!ready} onClick={() => importPicker.current?.click()}>导入主题配置</button><button disabled={!ready} onClick={() => void save(new Blob([JSON.stringify({ format: 'paperdock-theme', version: 1, theme }, null, 2)], { type: 'application/json' }), '我的主题.paperdock-theme.json')}>导出主题配置</button></div></div>
+      <div className="border-t pt-5 space-y-3"><h3 className="font-semibold">{mobileWorkbench ? '主题配置' : '导入与分享主题样式'}</h3>{!mobileWorkbench && <p>主题配置保存配色、圆角、透明度和播放偏好，壁纸文件单独导入。</p>}<input hidden ref={importPicker} type="file" accept=".json" onChange={e => { void importTheme(e.target.files?.[0]); e.target.value = ''; }} /><div className="flex flex-wrap gap-3"><button disabled={!ready} onClick={() => importPicker.current?.click()}>导入主题配置</button><button disabled={!ready} onClick={() => void save(new Blob([JSON.stringify({ format: 'paperdock-theme', version: 1, theme }, null, 2)], { type: 'application/json' }), '我的主题.paperdock-theme.json')}>导出主题配置</button></div></div>
       <div className="border-t pt-5 space-y-2"><h3 className="font-semibold">寻找壁纸</h3><p>可从 Pexels、Pixabay 下载图片或视频，再通过上方按钮导入；无需 Steam。下载需要联网，导入后可离线使用。</p><p className="select-all">https://www.pexels.com/ · https://pixabay.com/</p><p>Wallpaper Engine 中已有的图片、视频源文件也可导入。场景包、网页脚本及粒子交互不在兼容范围内。</p></div>
     </section>}
   </>;

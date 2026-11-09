@@ -11,11 +11,15 @@ const luminance = (hex: string) => {
 };
 
 /** Generate a Google-style dynamic color scheme from one seed color (e.g. the wallpaper accent). */
-export function applyMaterialTheme(seed: string, root: HTMLElement = document.documentElement) {
+export function applyMaterialTheme(seed: string, root: HTMLElement = document.documentElement, mobile = false) {
+  if (mobile && seed.toLowerCase() === '#0b57d0') {
+    for (const role of [...accentRoles, ...neutralRoles]) root.style.removeProperty(`--md-${kebab(role)}`);
+    return;
+  }
   const source = Hct.fromInt(argbFromHex(seed));
   // Fidelity keeps brand colors vivid for accents; tonal spot gives soft, lightly tinted surfaces.
-  const accent = new SchemeFidelity(source, false, 0);
   const neutral = new SchemeTonalSpot(source, false, 0);
+  const accent = mobile ? neutral : new SchemeFidelity(source, false, 0);
   for (const role of accentRoles) root.style.setProperty(`--md-${kebab(role)}`, hexFromArgb(MaterialDynamicColors[role].getArgb(accent)));
   for (const role of neutralRoles) root.style.setProperty(`--md-${kebab(role)}`, hexFromArgb(MaterialDynamicColors[role].getArgb(neutral)));
   // Use the exact seed as the primary color when it is dark enough for white text (≥ 4.5:1).

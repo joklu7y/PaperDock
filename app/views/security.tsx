@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Eraser, Eye, EyeOff, FileWarning, LockKeyhole, LockKeyholeOpen, ScanEye, Wrench } from 'lucide-react';
 import { formOf, useWorkbench } from '../api';
+import { mobileWorkbench } from '../platform';
 import { Button, Card, Chip, DropZone, Field, PageHeader } from '../ui';
 
 const permissionOptions = [['copy', '允许复制'], ['print', '允许打印'], ['modify', '允许修改 / 批注 / 填表']] as const;
@@ -33,7 +34,7 @@ export default function SecurityView() {
     <div className="md-view mx-auto max-w-4xl">
       <PageHeader title="安全与修复" subtitle="加密码、限制权限、永久涂黑、清理隐私信息，修复打不开的 PDF。" />
       <Card><DropZone files={file} onFiles={setFile} accept=".pdf" label="选择 PDF" compact /></Card>
-      <Card className="mt-6" title="密码与权限" subtitle="AES-256 加密；仅能移除由 PaperDock 加密的文件">
+      <Card className="mt-6" title="密码与权限" subtitle={mobileWorkbench ? '仅支持移除 PaperDock 设置的密码' : 'AES-256 加密；仅能移除由 PaperDock 加密的文件'}>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="打开密码" type={visible ? 'text' : 'password'} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} hint="至少 12 位，含大小写字母、数字和符号" />
           <Field label="所有者密码" type={visible ? 'text' : 'password'} autoComplete="new-password" value={ownerPassword} onChange={(e) => setOwnerPassword(e.target.value)} hint="须与打开密码不同，用于锁定权限" />
@@ -47,15 +48,15 @@ export default function SecurityView() {
           <Button variant="filled" icon={LockKeyhole} disabled={busy} onClick={() => void secure('protect')}>加密保存</Button>
         </div>
       </Card>
-      <Card className="mt-6" title="永久涂黑" subtitle="匹配的文字会被真正删除并盖黑，无法恢复；操作前请保留原件">
+      <Card className="mt-6" title="永久涂黑" subtitle={mobileWorkbench ? '涂黑后无法恢复，请保留原件' : '匹配的文字会被真正删除并盖黑，无法恢复；操作前请保留原件'}>
         <textarea className="md-input h-24" value={redact} onChange={(e) => setRedact(e.target.value)} placeholder={'每行一项，例如：\n身份证号\n手机号'} />
         <div className="mt-4 flex justify-end"><Button variant="danger" icon={ScanEye} disabled={busy} onClick={() => void secure('redact')}>永久涂黑</Button></div>
       </Card>
       <div className="mt-6 grid gap-6 md:grid-cols-2">
-        <Card title="清理元数据" subtitle="删除作者、软件、修改记录等隐藏信息">
+        <Card title="清理元数据" subtitle={mobileWorkbench ? undefined : '删除作者、软件、修改记录等隐藏信息'}>
           <Button variant="tonal" icon={Eraser} disabled={busy} onClick={() => void secure('clean-metadata')}>清理并保存</Button>
         </Card>
-        <Card title="修复损坏的 PDF" subtitle="重建交叉引用表；失败时自动换用 qpdf 深度恢复">
+        <Card title="修复损坏的 PDF" subtitle={mobileWorkbench ? undefined : '重建交叉引用表；失败时自动换用 qpdf 深度恢复'}>
           <Button variant="tonal" icon={Wrench} disabled={busy} onClick={() => void repair()}>尝试修复</Button>
         </Card>
       </div>

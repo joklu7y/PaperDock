@@ -6,6 +6,7 @@ import path from 'node:path';
 export const workbenchConfig = (mobile = false) => defineConfig({
   root: path.resolve(__dirname, 'desktop'),
   base: mobile ? './' : '/desktop/',
+  publicDir: mobile ? path.resolve(__dirname, 'mobile/workbench/public') : undefined,
   define: { __PAPERDOCK_MOBILE__: mobile },
   resolve: {
     alias: {

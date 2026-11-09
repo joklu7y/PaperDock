@@ -145,7 +145,7 @@ export default function AnnotateView() {
 
   return (
     <div className="md-view">
-      <PageHeader title="批注与签名" subtitle={`${name}.pdf · 第 ${pageIndex + 1} / ${count} 页`} actions={<>
+      <PageHeader title="批注与签名" detail={`${name}.pdf · 第 ${pageIndex + 1} / ${count} 页`} actions={<>
         <Button variant="text" onClick={() => { setDoc(null); setPage(null); setAnnotations([]); }}>关闭</Button>
         <Button variant="filled" icon={Download} onClick={() => void saveBlob(doc, `${name}-批注.pdf`)}>保存 PDF</Button>
       </>} />
@@ -196,7 +196,7 @@ export default function AnnotateView() {
           </Card>
         </div>
         <div className="space-y-4">
-          <Card title="按文字批量标记" subtitle="在全部页面中查找并标记">
+          <Card title="按文字批量标记" subtitle={mobileWorkbench ? undefined : '在全部页面中查找并标记'}>
             <Field label="要查找的文字" value={search} onChange={(e) => setSearch(e.target.value)} />
             <div className="mt-3 flex flex-wrap gap-2">
               {([['highlight', '高亮'], ['underline', '下划线'], ['strike', '删除线']] as const).map(([id, label]) => <Chip key={id} selected={searchType === id} onClick={() => setSearchType(id)}>{label}</Chip>)}
